@@ -1,0 +1,4 @@
+# Prisma Migrate 가 사용하는 데이터베이스 공급자 잠금 파일입니다.
+# 이 파일은 커밋해야 합니다.
+
+provider = "postgresql"

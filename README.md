@@ -33,6 +33,34 @@ pnpm start:dev
 - Swagger: `http://localhost:3001/docs`
 - 헬스체크: `GET http://localhost:3001/api/health`
 
+## 엔드포인트
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 서비스 및 DB 상태 |
+| `GET` | `/api/reservations` | 예약 목록 (상태·도착일·확인번호/이름 검색) |
+| `GET` | `/api/reservations/summary` | 당일 도착·출발·재실 요약 |
+| `GET` | `/api/reservations/:id` | 예약 단건 (폴리오·거래 포함) |
+| `POST` | `/api/reservations/:id/check-in` | 체크인 — 객실 배정 및 폴리오 개설 |
+| `POST` | `/api/reservations/:id/check-out` | 체크아웃 — 폴리오 마감 및 객실 반납 |
+| `GET` | `/api/rooms` | 객실 목록 |
+| `GET` | `/api/rooms/summary` | 객실 상태별 집계 |
+| `PATCH` | `/api/rooms/:id/status` | 하우스키핑 상태 변경 |
+| `POST` | `/api/sync/reservations` | Core 를 통해 OPERA 예약 동기화 |
+| `GET` | `/api/sync/logs` | 동기화 이력 조회 |
+
+체크인·체크아웃은 객실 배정·예약 상태·폴리오가 함께 성립해야 하므로 한 트랜잭션으로
+처리합니다. 재실 중인 객실 중복 배정, 판매 불가 객실 배정, 미결제 잔액이 남은 상태의
+체크아웃은 거절합니다.
+
+## Core 연동
+
+`CoreClient` 가 Core 를 호출하고, `SyncService` 가 결과를 로컬 DB 에 반영합니다.
+예약 한 건의 실패가 배치 전체를 멈추지 않도록 건별로 격리하며, 실패는 `SyncLog` 에
+남겨 나중에 재시도할 수 있게 합니다. 재시도는 Core 가 담당하는 401 재발급 외에는
+하지 않습니다 — 예약 도메인에서는 즉시 재시도보다 이력을 남기고 배치로 다시 도는
+편이 안전합니다.
+
 ## 데이터 모델
 
 `prisma/schema.prisma` 에 OPERA 개념을 반영한 모델을 정의했습니다.
@@ -54,7 +82,8 @@ PlanForge 자체 ID 를 1차 키로 두고, OPERA 식별자는 `operaHotelId`, `
 | `DATABASE_URL` | PostgreSQL 접속 문자열 |
 | `CORS_ORIGIN` | 허용 오리진 (쉼표 구분) |
 | `CORE_BASE_URL` | Core API 서버 주소 |
-| `CORE_API_KEY` | Core 호출용 API 키 |
+| `CORE_API_KEY` | Core 호출용 API 키 (`x-api-key`) |
+| `CORE_REQUEST_TIMEOUT_MS` | Core 호출 타임아웃 (기본 `15000`) |
 
 ## 스크립트
 

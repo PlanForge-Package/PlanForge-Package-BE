@@ -48,6 +48,14 @@ jobs:
       - name: Prisma generate
         run: pnpm prisma:generate
 
+      # 마이그레이션 SQL 이 실제 PostgreSQL 에 적용되는지 확인한다.
+      - name: Prisma migrate deploy
+        run: pnpm prisma:deploy
+
+      # 마이그레이션 결과가 schema.prisma 와 어긋나지 않는지 확인한다.
+      - name: Prisma schema drift check
+        run: pnpm exec prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
+
       - name: Typecheck
         run: pnpm typecheck
 
