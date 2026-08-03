@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import type { AuthUser } from '../auth/auth.constants';
 import { Roles } from '../auth/auth.constants';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { CreatePostingDto, OpenFolioDto } from './dto/folios.dto';
 import { FoliosService } from './folios.service';
 
@@ -15,14 +17,18 @@ export class FoliosController {
 
   @Get()
   @ApiOperation({ summary: '예약의 폴리오와 거래 내역 조회' })
-  list(@Param('reservationId') reservationId: string) {
-    return this.folios.listByReservation(reservationId);
+  list(@Param('reservationId') reservationId: string, @CurrentUser() user: AuthUser) {
+    return this.folios.listByReservation(reservationId, user);
   }
 
   @Post()
   @ApiOperation({ summary: '폴리오 윈도 추가 개설 (분할 정산)' })
-  openWindow(@Param('reservationId') reservationId: string, @Body() dto: OpenFolioDto) {
-    return this.folios.openWindow(reservationId, dto);
+  openWindow(
+    @Param('reservationId') reservationId: string,
+    @Body() dto: OpenFolioDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.folios.openWindow(reservationId, dto, user);
   }
 
   @Post(':window/postings')
@@ -31,7 +37,8 @@ export class FoliosController {
     @Param('reservationId') reservationId: string,
     @Param('window', ParseIntPipe) window: number,
     @Body() dto: CreatePostingDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.folios.addPosting(reservationId, window, dto);
+    return this.folios.addPosting(reservationId, window, dto, user);
   }
 }

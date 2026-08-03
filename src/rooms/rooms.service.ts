@@ -1,15 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RoomStatus } from '@prisma/client';
+import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import type { ListRoomsDto, UpdateRoomStatusDto } from './dto/rooms.dto';
 
 @Injectable()
 export class RoomsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(query: ListRoomsDto) {
+  list(query: ListRoomsDto, user: AuthUser) {
+    const propertyId = resolvePropertyScope(user, query.propertyId);
+
     const where: Prisma.RoomWhereInput = {
-      ...(query.propertyId ? { propertyId: query.propertyId } : {}),
+      ...(propertyId ? { propertyId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.occupied === undefined ? {} : { occupied: query.occupied }),
     };
@@ -26,11 +30,12 @@ export class RoomsService {
    *
    * 재실 중인 객실을 판매 불가로 돌리면 재고와 실제가 어긋나므로 막는다.
    */
-  async updateStatus(id: string, dto: UpdateRoomStatusDto) {
+  async updateStatus(id: string, dto: UpdateRoomStatusDto, user: AuthUser) {
     const room = await this.prisma.room.findUnique({ where: { id } });
     if (!room) {
       throw new NotFoundException(`객실을 찾을 수 없습니다: ${id}`);
     }
+    assertWithinScope(user, room.propertyId);
 
     const blocking =
       dto.status === RoomStatus.OUT_OF_ORDER || dto.status === RoomStatus.OUT_OF_SERVICE;
@@ -42,7 +47,14 @@ export class RoomsService {
   }
 
   /** 객실 상태별 집계. 하우스키핑 보드용. */
-  async statusSummary(propertyId: string) {
+  async statusSummary(requestedPropertyId: string, user: AuthUser) {
+    const propertyId = resolvePropertyScope(user, requestedPropertyId);
+
+    // 집계는 호텔을 특정해야 의미가 있다. 전 호텔 합계는 운영에 쓸 일이 없다.
+    if (!propertyId) {
+      throw new BadRequestException('호텔을 선택해 주세요.');
+    }
+
     const grouped = await this.prisma.room.groupBy({
       by: ['status'],
       where: { propertyId },

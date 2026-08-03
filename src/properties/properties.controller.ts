@@ -1,0 +1,46 @@
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import type { AuthUser } from '../auth/auth.constants';
+import { Roles } from '../auth/auth.constants';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { CreatePropertyDto, ListPropertiesDto, UpdatePropertyDto } from './dto/properties.dto';
+import { PropertiesService } from './properties.service';
+import { assertWithinScope } from './property-scope';
+
+@ApiTags('properties')
+@ApiBearerAuth()
+@Controller('properties')
+export class PropertiesController {
+  constructor(private readonly properties: PropertiesService) {}
+
+  // 목록은 모든 역할이 본다 — 호텔 선택기를 그리려면 필요하다.
+  // 소속이 있는 계정에는 자기 호텔만 돌아간다.
+  @Get()
+  @ApiOperation({ summary: '접근 가능한 호텔 목록' })
+  list(@CurrentUser() user: AuthUser, @Query() query: ListPropertiesDto) {
+    return this.properties.list(user, query.includeInactive);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: '호텔 단건 조회' })
+  async findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const property = await this.properties.findOne(id);
+    assertWithinScope(user, property.id);
+    return property;
+  }
+
+  @Post()
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: '호텔 등록' })
+  create(@Body() dto: CreatePropertyDto) {
+    return this.properties.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: '호텔 수정 — 운영 중단은 active=false 로 합니다' })
+  update(@Param('id') id: string, @Body() dto: UpdatePropertyDto) {
+    return this.properties.update(id, dto);
+  }
+}

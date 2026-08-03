@@ -6,7 +6,9 @@ import {
   RoomStatus,
   type Reservation,
 } from '@prisma/client';
+import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly } from '../sync/reservation.mapper';
 import type { CheckInDto, CheckOutDto } from './dto/front-desk.dto';
 import type { ListReservationsDto } from './dto/list-reservations.dto';
@@ -28,8 +30,9 @@ const RESERVATION_INCLUDE = {
 export class ReservationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: ListReservationsDto) {
-    const { propertyId, status, arrivalFrom, arrivalTo, q, limit = 50, offset = 0 } = query;
+  async list(query: ListReservationsDto, user: AuthUser) {
+    const { status, arrivalFrom, arrivalTo, q, limit = 50, offset = 0 } = query;
+    const propertyId = resolvePropertyScope(user, query.propertyId);
 
     const where: Prisma.ReservationWhereInput = {
       ...(propertyId ? { propertyId } : {}),
@@ -67,7 +70,7 @@ export class ReservationsService {
     return { items, total, limit, offset };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: AuthUser) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id },
       include: { ...RESERVATION_INCLUDE, folios: { include: { postings: true } } },
@@ -76,6 +79,10 @@ export class ReservationsService {
     if (!reservation) {
       throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
     }
+
+    // 목록은 범위로 걸러지지만 단건은 ID 만 알면 닿는다. 확인 번호나 URL 이
+    // 새어 나가는 것만으로 남의 호텔 예약이 열리면 안 된다.
+    assertWithinScope(user, reservation.propertyId);
     return reservation;
   }
 
@@ -85,12 +92,13 @@ export class ReservationsService {
    * 객실 배정·예약 상태·폴리오 생성이 함께 성립해야 하므로 한 트랜잭션으로 처리한다.
    * 이미 다른 예약이 쓰고 있는 객실은 배정하지 않는다.
    */
-  async checkIn(id: string, dto: CheckInDto): Promise<Reservation> {
+  async checkIn(id: string, dto: CheckInDto, user: AuthUser): Promise<Reservation> {
     return this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({ where: { id } });
       if (!reservation) {
         throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
       }
+      assertWithinScope(user, reservation.propertyId);
 
       if (!CHECK_IN_ALLOWED.includes(reservation.status)) {
         throw new BadRequestException(
@@ -144,7 +152,7 @@ export class ReservationsService {
    * 미결제 잔액이 남아 있으면 막는다 — 회계상 잔액이 있는 폴리오를 닫으면
    * 매출 누락으로 이어진다.
    */
-  async checkOut(id: string, dto: CheckOutDto): Promise<Reservation> {
+  async checkOut(id: string, dto: CheckOutDto, user: AuthUser): Promise<Reservation> {
     return this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
         where: { id },
@@ -153,6 +161,7 @@ export class ReservationsService {
       if (!reservation) {
         throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
       }
+      assertWithinScope(user, reservation.propertyId);
       if (reservation.status !== ReservationStatus.IN_HOUSE) {
         throw new BadRequestException(
           `현재 상태(${reservation.status})에서는 체크아웃할 수 없습니다.`,
@@ -191,7 +200,8 @@ export class ReservationsService {
   }
 
   /** 당일 도착·출발·재실 요약. 프론트데스크 대시보드용. */
-  async dailySummary(propertyId: string, date: string) {
+  async dailySummary(requestedPropertyId: string, date: string, user: AuthUser) {
+    const propertyId = resolvePropertyScope(user, requestedPropertyId);
     const day = parseDateOnly(date);
 
     const [arrivals, departures, inHouse] = await Promise.all([

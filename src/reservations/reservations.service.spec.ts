@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FolioStatus, Prisma, ReservationStatus, RoomStatus } from '@prisma/client';
+import { FolioStatus, Prisma, ReservationStatus, RoomStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReservationsService } from './reservations.service';
 
@@ -25,6 +25,16 @@ async function buildService(tx: ReturnType<typeof buildTx>) {
 
   return moduleRef.get(ReservationsService);
 }
+
+/** 소속이 없는 계정. 호텔 범위 검사는 property-scope.spec.ts 가 따로 다룬다. */
+const ACTOR = {
+  id: 'actor-1',
+  sub: 'actor-1',
+  email: 'actor@planforge.local',
+  name: '검사자',
+  role: UserRole.MANAGER,
+  propertyId: null,
+} as const;
 
 const BASE_RESERVATION = {
   id: 'res-1',
@@ -53,7 +63,7 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(tx);
-      await service.checkIn('res-1', { roomNumber: '1203' });
+      await service.checkIn('res-1', { roomNumber: '1203' }, ACTOR);
 
       expect(tx.room.update).toHaveBeenCalledWith({
         where: { id: 'room-1' },
@@ -78,7 +88,7 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(tx);
-      await expect(service.checkIn('res-1', {})).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.checkIn('res-1', {}, ACTOR)).rejects.toBeInstanceOf(BadRequestException);
       expect(tx.room.update).not.toHaveBeenCalled();
     });
 
@@ -88,7 +98,9 @@ describe('ReservationsService', () => {
       tx.room.findUnique.mockResolvedValue({ ...CLEAN_ROOM, occupied: true });
 
       const service = await buildService(tx);
-      await expect(service.checkIn('res-1', { roomNumber: '1203' })).rejects.toThrow(/사용 중/);
+      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
+        /사용 중/,
+      );
     });
 
     it('판매 불가 객실은 배정하지 않는다', async () => {
@@ -100,7 +112,9 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(tx);
-      await expect(service.checkIn('res-1', { roomNumber: '1203' })).rejects.toThrow(/판매 불가/);
+      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
+        /판매 불가/,
+      );
     });
 
     it('배정할 객실 번호가 전혀 없으면 거절한다', async () => {
@@ -108,7 +122,7 @@ describe('ReservationsService', () => {
       tx.reservation.findUnique.mockResolvedValue(BASE_RESERVATION);
 
       const service = await buildService(tx);
-      await expect(service.checkIn('res-1', {})).rejects.toThrow(/객실 번호가 없습니다/);
+      await expect(service.checkIn('res-1', {}, ACTOR)).rejects.toThrow(/객실 번호가 없습니다/);
     });
 
     it('없는 예약이면 404 를 낸다', async () => {
@@ -116,7 +130,7 @@ describe('ReservationsService', () => {
       tx.reservation.findUnique.mockResolvedValue(null);
 
       const service = await buildService(tx);
-      await expect(service.checkIn('nope', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.checkIn('nope', {}, ACTOR)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -139,7 +153,7 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(tx);
-      await service.checkOut('res-1', {});
+      await service.checkOut('res-1', {}, ACTOR);
 
       expect(tx.folio.updateMany).toHaveBeenCalledWith({
         where: { reservationId: 'res-1', status: FolioStatus.OPEN },
@@ -159,7 +173,7 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(tx);
-      await expect(service.checkOut('res-1', {})).rejects.toThrow(/미결제 잔액/);
+      await expect(service.checkOut('res-1', {}, ACTOR)).rejects.toThrow(/미결제 잔액/);
       expect(tx.folio.updateMany).not.toHaveBeenCalled();
     });
 
@@ -175,7 +189,7 @@ describe('ReservationsService', () => {
       tx.reservation.update.mockResolvedValue(IN_HOUSE);
 
       const service = await buildService(tx);
-      await expect(service.checkOut('res-1', {})).resolves.toBeDefined();
+      await expect(service.checkOut('res-1', {}, ACTOR)).resolves.toBeDefined();
     });
 
     it('재실 상태가 아니면 거절한다', async () => {
@@ -187,7 +201,9 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(tx);
-      await expect(service.checkOut('res-1', {})).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.checkOut('res-1', {}, ACTOR)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
 });

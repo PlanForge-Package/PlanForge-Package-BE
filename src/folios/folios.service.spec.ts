@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FolioStatus, PostingType, Prisma } from '@prisma/client';
+import { FolioStatus, PostingType, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FoliosService } from './folios.service';
 
@@ -13,12 +13,26 @@ function buildTx() {
 }
 
 async function buildService(tx: ReturnType<typeof buildTx>) {
-  const prisma = { $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)) };
+  const prisma = {
+    $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
+    // assertReservationInScope 가 트랜잭션 밖에서 예약의 호텔을 먼저 확인한다.
+    reservation: { findUnique: jest.fn().mockResolvedValue({ propertyId: 'prop-1' }) },
+  };
   const moduleRef = await Test.createTestingModule({
     providers: [FoliosService, { provide: PrismaService, useValue: prisma }],
   }).compile();
   return moduleRef.get(FoliosService);
 }
+
+/** 소속이 없는 계정. 호텔 범위 검사는 property-scope.spec.ts 가 따로 다룬다. */
+const ACTOR = {
+  id: 'actor-1',
+  sub: 'actor-1',
+  email: 'actor@planforge.local',
+  name: '검사자',
+  role: UserRole.MANAGER,
+  propertyId: null,
+} as const;
 
 const OPEN_FOLIO = {
   id: 'folio-1',
@@ -45,12 +59,17 @@ describe('FoliosService', () => {
       tx.folio.update.mockResolvedValue(OPEN_FOLIO);
 
       const service = await buildService(tx);
-      await service.addPosting('res-1', 1, {
-        type,
-        transactionCode: '1000',
-        description: 'x',
-        amount: Number(expected),
-      });
+      await service.addPosting(
+        'res-1',
+        1,
+        {
+          type,
+          transactionCode: '1000',
+          description: 'x',
+          amount: Number(expected),
+        },
+        ACTOR,
+      );
 
       expect(savedAmount(tx).toString()).toBe(expected);
     });
@@ -62,12 +81,17 @@ describe('FoliosService', () => {
       tx.folio.update.mockResolvedValue(OPEN_FOLIO);
 
       const service = await buildService(tx);
-      await service.addPosting('res-1', 1, {
-        type: PostingType.PAYMENT,
-        transactionCode: '5000',
-        description: '카드 결제',
-        amount: 340000,
-      });
+      await service.addPosting(
+        'res-1',
+        1,
+        {
+          type: PostingType.PAYMENT,
+          transactionCode: '5000',
+          description: '카드 결제',
+          amount: 340000,
+        },
+        ACTOR,
+      );
 
       expect(savedAmount(tx).toString()).toBe('-340000');
     });
@@ -79,13 +103,18 @@ describe('FoliosService', () => {
       tx.folio.update.mockResolvedValue(OPEN_FOLIO);
 
       const service = await buildService(tx);
-      await service.addPosting('res-1', 1, {
-        type: PostingType.ADJUSTMENT,
-        transactionCode: '7000',
-        description: '할인',
-        amount: 10000,
-        negative: true,
-      });
+      await service.addPosting(
+        'res-1',
+        1,
+        {
+          type: PostingType.ADJUSTMENT,
+          transactionCode: '7000',
+          description: '할인',
+          amount: 10000,
+          negative: true,
+        },
+        ACTOR,
+      );
 
       expect(savedAmount(tx).toString()).toBe('-10000');
     });
@@ -99,12 +128,17 @@ describe('FoliosService', () => {
       tx.folio.update.mockResolvedValue(OPEN_FOLIO);
 
       const service = await buildService(tx);
-      await service.addPosting('res-1', 1, {
-        type: PostingType.CHARGE,
-        transactionCode: '1000',
-        description: '객실료',
-        amount: 240000,
-      });
+      await service.addPosting(
+        'res-1',
+        1,
+        {
+          type: PostingType.CHARGE,
+          transactionCode: '1000',
+          description: '객실료',
+          amount: 240000,
+        },
+        ACTOR,
+      );
 
       const updated = tx.folio.update.mock.calls[0][0];
       expect(updated.data.balance.toString()).toBe('264000');
@@ -117,12 +151,17 @@ describe('FoliosService', () => {
       tx.folio.update.mockResolvedValue(OPEN_FOLIO);
 
       const service = await buildService(tx);
-      await service.addPosting('res-1', 1, {
-        type: PostingType.CHARGE,
-        transactionCode: '1000',
-        description: 'x',
-        amount: 1,
-      });
+      await service.addPosting(
+        'res-1',
+        1,
+        {
+          type: PostingType.CHARGE,
+          transactionCode: '1000',
+          description: 'x',
+          amount: 1,
+        },
+        ACTOR,
+      );
 
       expect(tx.folio.update.mock.calls[0][0].data.balance.toString()).toBe('0');
     });
@@ -135,12 +174,17 @@ describe('FoliosService', () => {
 
       const service = await buildService(tx);
       await expect(
-        service.addPosting('res-1', 1, {
-          type: PostingType.CHARGE,
-          transactionCode: '1000',
-          description: 'x',
-          amount: 1,
-        }),
+        service.addPosting(
+          'res-1',
+          1,
+          {
+            type: PostingType.CHARGE,
+            transactionCode: '1000',
+            description: 'x',
+            amount: 1,
+          },
+          ACTOR,
+        ),
       ).rejects.toThrow(/마감된 폴리오/);
       expect(tx.posting.create).not.toHaveBeenCalled();
     });
@@ -151,12 +195,17 @@ describe('FoliosService', () => {
 
       const service = await buildService(tx);
       await expect(
-        service.addPosting('res-1', 3, {
-          type: PostingType.CHARGE,
-          transactionCode: '1000',
-          description: 'x',
-          amount: 1,
-        }),
+        service.addPosting(
+          'res-1',
+          3,
+          {
+            type: PostingType.CHARGE,
+            transactionCode: '1000',
+            description: 'x',
+            amount: 1,
+          },
+          ACTOR,
+        ),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
@@ -169,7 +218,7 @@ describe('FoliosService', () => {
       tx.folio.create.mockResolvedValue({ window: 3 });
 
       const service = await buildService(tx);
-      await service.openWindow('res-1', {});
+      await service.openWindow('res-1', {}, ACTOR);
 
       expect(tx.folio.create).toHaveBeenCalledWith({
         data: { reservationId: 'res-1', window: 3, currency: 'KRW' },
@@ -182,7 +231,7 @@ describe('FoliosService', () => {
       tx.folio.findMany.mockResolvedValue([{ window: 1 }]);
 
       const service = await buildService(tx);
-      await expect(service.openWindow('res-1', { window: 1 })).rejects.toBeInstanceOf(
+      await expect(service.openWindow('res-1', { window: 1 }, ACTOR)).rejects.toBeInstanceOf(
         BadRequestException,
       );
     });
@@ -193,7 +242,7 @@ describe('FoliosService', () => {
       tx.folio.findMany.mockResolvedValue(Array.from({ length: 8 }, (_, i) => ({ window: i + 1 })));
 
       const service = await buildService(tx);
-      await expect(service.openWindow('res-1', {})).rejects.toThrow(/8개까지만/);
+      await expect(service.openWindow('res-1', {}, ACTOR)).rejects.toThrow(/8개까지만/);
     });
 
     it('없는 예약이면 404 를 낸다', async () => {
@@ -201,7 +250,7 @@ describe('FoliosService', () => {
       tx.reservation.findUnique.mockResolvedValue(null);
 
       const service = await buildService(tx);
-      await expect(service.openWindow('nope', {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.openWindow('nope', {}, ACTOR)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

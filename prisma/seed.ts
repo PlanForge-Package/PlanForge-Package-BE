@@ -54,12 +54,28 @@ const ROOMS = [
   { number: '1502', floor: '15', type: 'SUIT', status: RoomStatus.OUT_OF_ORDER },
 ];
 
-/** 역할별로 하나씩. 권한 경계를 화면에서 바로 확인할 수 있게 한다. */
+/**
+ * 역할별로 하나씩. 권한 경계를 화면에서 바로 확인할 수 있게 한다.
+ *
+ * `assigned: false` 는 소속 없음(본사)이다. 관리자를 특정 호텔에 묶으면 다중 호텔
+ * 운영에서 다른 호텔을 관리할 수 없게 된다 — 호텔 등록도, 그 호텔 직원 배치도
+ * 막힌다. 관리자는 본사 계정으로 둔다.
+ */
 const USERS = [
-  { email: 'admin@planforge.local', name: '관리자', role: UserRole.ADMIN },
-  { email: 'manager@planforge.local', name: '지배인', role: UserRole.MANAGER },
-  { email: 'frontdesk@planforge.local', name: '프론트데스크', role: UserRole.FRONT_DESK },
-  { email: 'housekeeping@planforge.local', name: '하우스키핑', role: UserRole.HOUSEKEEPING },
+  { email: 'admin@planforge.local', name: '관리자', role: UserRole.ADMIN, assigned: false },
+  { email: 'manager@planforge.local', name: '지배인', role: UserRole.MANAGER, assigned: true },
+  {
+    email: 'frontdesk@planforge.local',
+    name: '프론트데스크',
+    role: UserRole.FRONT_DESK,
+    assigned: true,
+  },
+  {
+    email: 'housekeeping@planforge.local',
+    name: '하우스키핑',
+    role: UserRole.HOUSEKEEPING,
+    assigned: true,
+  },
 ];
 
 const GUESTS = [
@@ -172,12 +188,14 @@ async function main(): Promise<void> {
   }
   const passwordHash = await bcrypt.hash(seedPassword, 10);
 
-  for (const user of USERS) {
+  for (const { assigned, ...user } of USERS) {
+    const propertyId = assigned ? property.id : null;
     await prisma.user.upsert({
       where: { email: user.email },
-      // 비밀번호도 매번 되돌린다 — 개발 중 바꿔 놓고 잊어 로그인하지 못하는 일을 막는다.
-      update: { name: user.name, role: user.role, passwordHash, active: true },
-      create: { ...user, passwordHash, propertyId: property.id },
+      // 비밀번호와 소속도 매번 되돌린다 — 개발 중 바꿔 놓고 잊어 로그인하지 못하거나
+      // 관리자가 한 호텔에 갇히는 일을 막는다.
+      update: { name: user.name, role: user.role, passwordHash, active: true, propertyId },
+      create: { ...user, passwordHash, propertyId },
     });
   }
 

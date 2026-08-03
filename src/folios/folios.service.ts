@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { FolioStatus, PostingType, Prisma } from '@prisma/client';
+import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertWithinScope } from '../properties/property-scope';
 import type { CreatePostingDto, OpenFolioDto } from './dto/folios.dto';
 
 /** OPERA 는 예약당 폴리오 윈도를 8개까지 둔다. */
@@ -30,14 +32,8 @@ function signedAmount(dto: CreatePostingDto): Prisma.Decimal {
 export class FoliosService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listByReservation(reservationId: string) {
-    const reservation = await this.prisma.reservation.findUnique({
-      where: { id: reservationId },
-      select: { id: true },
-    });
-    if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
-    }
+  async listByReservation(reservationId: string, user: AuthUser) {
+    await this.assertReservationInScope(reservationId, user);
 
     return this.prisma.folio.findMany({
       where: { reservationId },
@@ -47,15 +43,16 @@ export class FoliosService {
   }
 
   /** 분할 정산을 위해 폴리오 윈도를 추가로 연다. */
-  async openWindow(reservationId: string, dto: OpenFolioDto) {
+  async openWindow(reservationId: string, dto: OpenFolioDto, user: AuthUser) {
     return this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
         where: { id: reservationId },
-        select: { id: true, currency: true },
+        select: { id: true, currency: true, propertyId: true },
       });
       if (!reservation) {
         throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
       }
+      assertWithinScope(user, reservation.propertyId);
 
       const existing = await tx.folio.findMany({
         where: { reservationId },
@@ -88,7 +85,9 @@ export class FoliosService {
    * 마감된 폴리오에는 등록할 수 없다 — 마감 후 거래가 붙으면 체크아웃 시점의
    * 잔액 0 검증이 무의미해진다.
    */
-  async addPosting(reservationId: string, window: number, dto: CreatePostingDto) {
+  async addPosting(reservationId: string, window: number, dto: CreatePostingDto, user: AuthUser) {
+    await this.assertReservationInScope(reservationId, user);
+
     return this.prisma.$transaction(async (tx) => {
       const folio = await tx.folio.findUnique({
         where: { reservationId_window: { reservationId, window } },
@@ -124,5 +123,20 @@ export class FoliosService {
         include: { postings: { orderBy: { postedAt: 'asc' } } },
       });
     });
+  }
+
+  /**
+   * 폴리오는 예약에 매달려 있으므로 예약의 호텔로 접근을 판단한다.
+   * 예약 ID 만 알면 닿는 경로라 여기서도 반드시 확인한다.
+   */
+  private async assertReservationInScope(reservationId: string, user: AuthUser): Promise<void> {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      select: { propertyId: true },
+    });
+    if (!reservation) {
+      throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
+    }
+    assertWithinScope(user, reservation.propertyId);
   }
 }
