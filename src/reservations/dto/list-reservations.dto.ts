@@ -31,6 +31,16 @@ export class ListReservationsDto {
   @IsString()
   q?: string;
 
+  @ApiPropertyOptional({ description: '예약 출처 — DIRECT · OTA · PHONE …' })
+  @IsOptional()
+  @IsString()
+  sourceCode?: string;
+
+  @ApiPropertyOptional({ description: '판매 채널 — BOOKINGCOM · EXPEDIA …' })
+  @IsOptional()
+  @IsString()
+  channelCode?: string;
+
   @ApiPropertyOptional({ default: 50, minimum: 1, maximum: 200 })
   @IsOptional()
   @Type(() => Number)

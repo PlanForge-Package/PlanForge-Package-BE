@@ -154,6 +154,9 @@ export class SyncService {
       children: source.children ?? 0,
       assignedRoomNumber: source.roomNumber ?? null,
       blockCode: source.blockCode ?? null,
+      sourceCode: source.sourceCode ?? null,
+      marketCode: source.marketCode ?? null,
+      channelCode: source.channelCode ?? null,
     };
 
     const existing = await this.prisma.reservation.findUnique({

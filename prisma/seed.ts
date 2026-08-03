@@ -93,6 +93,12 @@ const GUESTS = [
   { opera: 'PRF-0006', last: 'Yoon', first: 'Daniel', email: 'daniel.yoon@example.com', vip: true },
 ];
 
+/**
+ * 예약 경로를 서로 다르게 둔다.
+ *
+ * 전부 같은 채널이면 채널별 실적 화면이 한 줄짜리가 되어 아무것도 검증하지
+ * 못한다. OTA·자사·프런트가 섞여 있어야 의존도와 ADR 차이가 눈에 보인다.
+ */
 const RESERVATIONS = [
   // 재실 — 객실 배정 + 폴리오 개설까지 되어 있어 체크아웃을 바로 시험할 수 있다.
   {
@@ -105,6 +111,9 @@ const RESERVATIONS = [
     status: ReservationStatus.IN_HOUSE,
     room: '1203',
     total: '480000',
+    source: 'OTA',
+    market: 'LEISURE',
+    channel: 'BOOKINGCOM',
   },
   // 오늘 도착 확정 — 체크인 시험용.
   {
@@ -117,6 +126,9 @@ const RESERVATIONS = [
     status: ReservationStatus.CONFIRMED,
     room: null,
     total: '380000',
+    source: 'DIRECT',
+    market: 'TRANSIENT',
+    channel: 'WEB',
   },
   {
     conf: 'PF-000003',
@@ -128,6 +140,9 @@ const RESERVATIONS = [
     status: ReservationStatus.RESERVED,
     room: null,
     total: '1200000',
+    source: 'CORPORATE',
+    market: 'CORPORATE',
+    channel: 'FRONTDESK',
   },
   {
     conf: 'PF-000004',
@@ -139,6 +154,9 @@ const RESERVATIONS = [
     status: ReservationStatus.CHECKED_OUT,
     room: '1103',
     total: '460000',
+    source: 'OTA',
+    market: 'LEISURE',
+    channel: 'EXPEDIA',
   },
   {
     conf: 'PF-000005',
@@ -150,6 +168,9 @@ const RESERVATIONS = [
     status: ReservationStatus.CANCELLED,
     room: null,
     total: null,
+    source: 'DIRECT',
+    market: 'TRANSIENT',
+    channel: 'WEB',
   },
   {
     conf: 'PF-000006',
@@ -161,6 +182,9 @@ const RESERVATIONS = [
     status: ReservationStatus.WAITLISTED,
     room: null,
     total: null,
+    source: 'PHONE',
+    market: 'LEISURE',
+    channel: null,
   },
 ];
 
@@ -283,6 +307,9 @@ async function main(): Promise<void> {
       assignedRoomNumber: r.room,
       totalAmount: r.total,
       currency: 'KRW',
+      sourceCode: r.source,
+      marketCode: r.market,
+      channelCode: r.channel,
     };
 
     const reservation = await prisma.reservation.upsert({

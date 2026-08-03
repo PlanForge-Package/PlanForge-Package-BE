@@ -31,12 +31,23 @@ export class ReservationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(query: ListReservationsDto, user: AuthUser) {
-    const { status, arrivalFrom, arrivalTo, q, limit = 50, offset = 0 } = query;
+    const {
+      status,
+      arrivalFrom,
+      arrivalTo,
+      q,
+      sourceCode,
+      channelCode,
+      limit = 50,
+      offset = 0,
+    } = query;
     const propertyId = resolvePropertyScope(user, query.propertyId);
 
     const where: Prisma.ReservationWhereInput = {
       ...(propertyId ? { propertyId } : {}),
       ...(status ? { status } : {}),
+      ...(sourceCode ? { sourceCode } : {}),
+      ...(channelCode ? { channelCode } : {}),
       ...(arrivalFrom || arrivalTo
         ? {
             arrivalDate: {

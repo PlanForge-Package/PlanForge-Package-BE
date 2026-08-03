@@ -42,6 +42,10 @@ export interface CoreReservation {
   currency?: string;
   /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
   blockCode?: string;
+  /** 예약이 들어온 경로. 세 축을 따로 두어야 조합을 구분할 수 있다. */
+  sourceCode?: string;
+  marketCode?: string;
+  channelCode?: string;
   guest?: {
     profileId?: string;
     firstName?: string;
@@ -62,6 +66,8 @@ export interface CoreReservationListParams {
   arrivalDate?: string;
   departureDate?: string;
   status?: CoreReservationStatus;
+  sourceCode?: string;
+  channelCode?: string;
   limit?: number;
   offset?: number;
 }
@@ -114,6 +120,10 @@ export interface CoreCreateReservationInput {
   children?: number;
   /** 단체 블록에서 빼는 예약이면 블록 코드. OPERA 가 픽업으로 잡는다. */
   blockCode?: string;
+  /** 예약 경로. 비우면 OPERA 가 직접 예약으로 잡는다. */
+  sourceCode?: string;
+  marketCode?: string;
+  channelCode?: string;
   guest: {
     profileId?: string;
     firstName: string;

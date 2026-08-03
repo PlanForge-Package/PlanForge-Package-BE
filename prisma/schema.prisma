@@ -367,6 +367,19 @@ model Reservation {
   /// 단체 블록에서 빠져나온 예약이면 그 블록 코드.
   /// FK 가 아니라 코드인 이유는 블록이 아직 캐시되기 전에 예약이 먼저 들어올 수 있어서다.
   blockCode          String?
+
+  /**
+   * 예약이 들어온 경로. OPERA 가 세 축으로 나눈 것을 그대로 따른다.
+   *
+   * 하나로 합치면 "OTA 를 통해 들어온 법인 예약" 같은 조합을 구분할 수 없어
+   * 채널별 수익성 판단이 무너진다.
+   */
+  /// 예약을 받은 방법 — DIRECT · PHONE · WALKIN · OTA · GDS · CORPORATE
+  sourceCode  String?
+  /// 손님의 성격 — TRANSIENT · CORPORATE · GROUP · LEISURE · GOVERNMENT
+  marketCode  String?
+  /// 구체적인 판매 채널 — WEB · BOOKINGCOM · EXPEDIA · YANOLJA …
+  channelCode String?
   totalAmount        Decimal?          @db.Decimal(12, 2)
   currency           String            @default("KRW")
   notes              String?
@@ -382,6 +395,7 @@ model Reservation {
   @@index([propertyId, arrivalDate])
   @@index([propertyId, status])
   @@index([propertyId, blockCode])
+  @@index([propertyId, channelCode])
   @@map("reservations")
 }
 

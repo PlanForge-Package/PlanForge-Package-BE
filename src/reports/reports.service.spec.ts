@@ -25,12 +25,16 @@ function stay(
   departure: string,
   total: number | null,
   status: ReservationStatus = ReservationStatus.CHECKED_OUT,
+  codes: { sourceCode?: string; marketCode?: string; channelCode?: string } = {},
 ) {
   return {
     status,
     arrivalDate: utc(arrival),
     departureDate: utc(departure),
     totalAmount: total === null ? null : new Prisma.Decimal(total),
+    sourceCode: codes.sourceCode ?? null,
+    marketCode: codes.marketCode ?? null,
+    channelCode: codes.channelCode ?? null,
   };
 }
 
@@ -214,6 +218,96 @@ describe('ReportsService — 포스팅 매출', () => {
       HQ,
     );
     expect(result.postings.outstanding).toBe('0.00');
+  });
+});
+
+describe('ReportsService — 채널 분해', () => {
+  it('채널별 판매·매출·ADR·비중을 낸다', async () => {
+    const service = await buildService(
+      buildPrisma({
+        reservations: [
+          stay('2026-08-01', '2026-08-02', 300000, ReservationStatus.CHECKED_OUT, {
+            channelCode: 'BOOKINGCOM',
+          }),
+          stay('2026-08-01', '2026-08-02', 100000, ReservationStatus.CHECKED_OUT, {
+            channelCode: 'WEB',
+          }),
+          stay('2026-08-01', '2026-08-02', 100000, ReservationStatus.CHECKED_OUT, {
+            channelCode: 'WEB',
+          }),
+        ],
+      }),
+    );
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-01' },
+      HQ,
+    );
+
+    // 매출이 큰 쪽부터 온다.
+    expect(result.breakdown.channel.map((row) => row.code)).toEqual(['BOOKINGCOM', 'WEB']);
+    const web = result.breakdown.channel.find((row) => row.code === 'WEB');
+    expect(web?.roomsSold).toBe(2);
+    expect(web?.roomRevenue).toBe('200000.00');
+    expect(web?.adr).toBe('100000.00');
+    expect(web?.share).toBeCloseTo(2 / 3, 4);
+  });
+
+  // 빼 버리면 분해 합계가 전체와 어긋나 어느 쪽이 맞는지 알 수 없다.
+  it('코드가 없는 예약은 (미지정) 으로 모은다', async () => {
+    const service = await buildService(
+      buildPrisma({ reservations: [stay('2026-08-01', '2026-08-02', 100000)] }),
+    );
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-01' },
+      HQ,
+    );
+    expect(result.breakdown.channel[0]?.code).toBe('(미지정)');
+  });
+
+  it('분해 합계는 전체 합계와 같다', async () => {
+    const service = await buildService(
+      buildPrisma({
+        reservations: [
+          stay('2026-08-01', '2026-08-03', 400000, ReservationStatus.CHECKED_OUT, {
+            sourceCode: 'OTA',
+          }),
+          stay('2026-08-01', '2026-08-02', 150000, ReservationStatus.CHECKED_OUT, {
+            sourceCode: 'PHONE',
+          }),
+        ],
+      }),
+    );
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-02' },
+      HQ,
+    );
+
+    const sold = result.breakdown.source.reduce((sum, row) => sum + row.roomsSold, 0);
+    const revenue = result.breakdown.source.reduce((sum, row) => sum + Number(row.roomRevenue), 0);
+    expect(sold).toBe(result.totals.roomsSold);
+    expect(revenue).toBeCloseTo(Number(result.totals.roomRevenue), 2);
+  });
+
+  // 취소·노쇼가 채널 실적에 섞이면 팔지 않은 것을 판 것으로 집계한다.
+  it('실적이 아닌 예약은 분해에서도 뺀다', async () => {
+    const service = await buildService(
+      buildPrisma({
+        reservations: [
+          stay('2026-08-01', '2026-08-02', 100000, ReservationStatus.CONFIRMED, {
+            channelCode: 'WEB',
+          }),
+        ],
+      }),
+    );
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-01' },
+      HQ,
+    );
+    expect(result.breakdown.channel).toEqual([]);
   });
 });
 

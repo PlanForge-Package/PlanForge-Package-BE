@@ -78,6 +78,9 @@ export class ReportsService {
           arrivalDate: true,
           departureDate: true,
           totalAmount: true,
+          sourceCode: true,
+          marketCode: true,
+          channelCode: true,
         },
       }),
       this.prisma.posting.findMany({
@@ -147,6 +150,17 @@ export class ReportsService {
         revpar: totalAvailable === 0 ? '0.00' : totalRevenue.div(totalAvailable).toFixed(2),
       },
       /**
+       * 채널·출처·시장별 분해.
+       *
+       * 어디서 들어온 예약이 얼마를 남기는지 모르면 수수료를 물고도 계속 파는
+       * 채널을 골라낼 수 없다. 합계는 위의 totals 와 같아야 한다.
+       */
+      breakdown: {
+        channel: groupBy(dates, reservations, (r) => r.channelCode),
+        source: groupBy(dates, reservations, (r) => r.sourceCode),
+        market: groupBy(dates, reservations, (r) => r.marketCode),
+      },
+      /**
        * 폴리오에 실제로 올라간 금액. 계약 기준 매출과 다른 값이다.
        *
        * `amount` 는 저장 시점에 이미 부호가 붙어 있다(결제·차감 조정은 음수).
@@ -192,6 +206,66 @@ export class ReportsService {
     }
     return property;
   }
+}
+
+interface StayRow {
+  status: ReservationStatus;
+  arrivalDate: Date;
+  departureDate: Date;
+  totalAmount: Prisma.Decimal | null;
+}
+
+export interface BreakdownRow {
+  code: string;
+  roomsSold: number;
+  roomRevenue: string;
+  adr: string;
+  /** 이 분류가 전체 판매에서 차지하는 비중. 채널 의존도를 한눈에 본다. */
+  share: number;
+}
+
+/**
+ * 분류별 실적.
+ *
+ * 코드가 비어 있는 예약은 '(미지정)' 으로 모은다. 빼 버리면 분해 합계가 전체와
+ * 어긋나 어느 쪽이 맞는지 알 수 없게 된다.
+ */
+function groupBy(
+  dates: string[],
+  reservations: Array<StayRow & Record<string, unknown>>,
+  pick: (row: Record<string, unknown>) => unknown,
+): BreakdownRow[] {
+  const buckets = new Map<string, { roomsSold: number; revenue: Prisma.Decimal }>();
+
+  for (const date of dates) {
+    for (const stay of reservations) {
+      if (!REALIZED.includes(stay.status) || !coversNight(stay, date)) continue;
+
+      const raw = pick(stay);
+      const code = typeof raw === 'string' && raw ? raw : '(미지정)';
+      const bucket = buckets.get(code) ?? { roomsSold: 0, revenue: new Prisma.Decimal(0) };
+      bucket.roomsSold += 1;
+      bucket.revenue = bucket.revenue.add(
+        nightlyShare(stay.totalAmount, stay.arrivalDate, stay.departureDate),
+      );
+      buckets.set(code, bucket);
+    }
+  }
+
+  const totalSold = [...buckets.values()].reduce((sum, b) => sum + b.roomsSold, 0);
+
+  return (
+    [...buckets.entries()]
+      .map(([code, bucket]) => ({
+        code,
+        roomsSold: bucket.roomsSold,
+        roomRevenue: bucket.revenue.toFixed(2),
+        adr: bucket.roomsSold === 0 ? '0.00' : bucket.revenue.div(bucket.roomsSold).toFixed(2),
+        share: totalSold === 0 ? 0 : round(bucket.roomsSold / totalSold, 4),
+      }))
+      // 매출이 큰 쪽부터. 채널 의존도는 위에서부터 읽는 것이 자연스럽다.
+      .sort((a, b) => Number(b.roomRevenue) - Number(a.roomRevenue))
+  );
 }
 
 /** 그 날짜에 숙박했는지. 출발일 당일은 방을 쓰지 않으므로 제외한다. */

@@ -87,6 +87,30 @@ export class CreateBookingDto extends CheckAvailabilityDto {
   blockCode?: string;
 
   /**
+   * 예약 경로.
+   *
+   * 허용 코드 검증은 OPERA 가 한다 — 호텔마다 설정이 다르므로 여기에 목록을
+   * 박아 두면 설정이 바뀔 때마다 두 곳을 고쳐야 한다.
+   */
+  @ApiPropertyOptional({ example: 'OTA', description: 'DIRECT · PHONE · WALKIN · OTA · GDS …' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  sourceCode?: string;
+
+  @ApiPropertyOptional({ example: 'LEISURE' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  marketCode?: string;
+
+  @ApiPropertyOptional({ example: 'BOOKINGCOM' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  channelCode?: string;
+
+  /**
    * `@ValidateNested()` 가 없으면 전역 ValidationPipe 의 whitelist 가 중첩 객체를
    * "검증 대상이 아닌 속성" 으로 보고 통째로 걷어낸다. forbidNonWhitelisted 까지
    * 켜 두었으므로 요청 자체가 400 으로 거절된다.
