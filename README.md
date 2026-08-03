@@ -85,7 +85,6 @@ CREATE DATABASE planforge OWNER planforge;
 | `GET` | `/api/housekeeping/attendants` | 배정 가능한 직원 |
 | `GET` | `/api/housekeeping/discrepancies` | 객실 상태·재실 불일치 |
 | `GET` | `/api/rooms/summary` | 객실 상태별 집계 |
-| `PATCH` | `/api/rooms/:id/status` | 하우스키핑 상태 변경 |
 | `POST` | `/api/sync/reservations` | Core 를 통해 OPERA 예약 동기화 |
 | `GET` | `/api/sync/logs` | 동기화 이력 조회 |
 
