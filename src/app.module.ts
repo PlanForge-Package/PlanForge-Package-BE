@@ -10,6 +10,7 @@ import { HealthModule } from './health/health.module';
 import { HousekeepingModule } from './housekeeping/housekeeping.module';
 import { NightAuditModule } from './night-audit/night-audit.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ProfilesModule } from './profiles/profiles.module';
 import { PropertiesModule } from './properties/properties.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     FoliosModule,
     HousekeepingModule,
     NightAuditModule,
+    ProfilesModule,
     PropertiesModule,
     ReportsModule,
     ReservationsModule,

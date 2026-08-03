@@ -143,6 +143,14 @@ export interface CoreBusinessDate {
   calendarDate: string;
 }
 
+export interface CoreProfile {
+  profileId: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  mergedIntoId?: string;
+}
+
 // --- 단체 블록 --------------------------------------------------------------
 
 export type CoreBlockStatus = 'Inquiry' | 'Tentative' | 'Definite' | 'Cancelled' | 'Actual';

@@ -55,7 +55,7 @@ function buildPrisma() {
     ratePlan: { upsert: jest.fn().mockResolvedValue({ id: 'rp-1' }) },
     profile: {
       upsert: jest.fn().mockResolvedValue({ id: 'pf-1' }),
-      findFirst: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'pf-new' }),
     },
     syncLog: {
@@ -114,6 +114,48 @@ describe('BookingService — 생성', () => {
     const upsert = prisma.reservation.upsert.mock.calls[0][0];
     expect(upsert.where).toEqual({ operaReservationId: 'OPERA-2001' });
     expect(upsert.create.confirmationNumber).toBe('OP2001');
+  });
+
+  /*
+   * 보내지 않으면 OPERA 가 매번 새 프로필을 만든다. 재방문 손님마다 프로필이
+   * 늘어나고 투숙 이력이 흩어져 결국 손으로 병합해야 한다.
+   */
+  it('이미 아는 이메일이면 그 OPERA 프로필 ID 를 함께 보낸다', async () => {
+    const prisma = buildPrisma();
+    prisma.profile.findFirst.mockResolvedValue({ operaProfileId: 'PRF-EXISTING' });
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.create(
+      { ...VALID_INPUT, guest: { ...VALID_INPUT.guest, email: 'repeat@example.com' } },
+      HQ,
+    );
+
+    expect(core.createReservation.mock.calls[0][0].guest.profileId).toBe('PRF-EXISTING');
+  });
+
+  it('처음 보는 손님이면 프로필 ID 없이 보낸다', async () => {
+    const prisma = buildPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.create(VALID_INPUT, HQ);
+    expect(core.createReservation.mock.calls[0][0].guest.profileId).toBeUndefined();
+  });
+
+  // 병합된 프로필에 붙이면 방금 정리한 중복이 되살아난다.
+  it('병합된 프로필은 후보에서 제외한다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma, buildCore());
+
+    await service.create(
+      { ...VALID_INPUT, guest: { ...VALID_INPUT.guest, email: 'repeat@example.com' } },
+      HQ,
+    );
+
+    expect(prisma.profile.findFirst.mock.calls[0][0].where).toEqual(
+      expect.objectContaining({ mergedIntoId: null }),
+    );
   });
 
   // 로컬 값은 캐시다. 우리가 보낸 값이 아니라 OPERA 가 확정한 값을 써야 갈리지 않는다.

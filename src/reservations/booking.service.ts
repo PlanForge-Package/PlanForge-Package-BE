@@ -80,7 +80,10 @@ export class BookingService {
         adults: dto.adults ?? 1,
         children: dto.children ?? 0,
         blockCode: dto.blockCode,
-        guest: dto.guest,
+        guest: {
+          ...dto.guest,
+          profileId: dto.guest.profileId ?? (await this.knownProfileId(dto.guest.email)),
+        },
       });
 
       const mirrored = await this.mirror(property, created);
@@ -204,6 +207,32 @@ export class BookingService {
         confirmationNumber: source.confirmationNumber ?? source.reservationId,
       },
     });
+  }
+
+  /**
+   * 이미 아는 손님이면 그 OPERA 프로필 ID 를 함께 보낸다.
+   *
+   * 보내지 않으면 OPERA 가 매번 새 프로필을 만든다. 재방문 손님마다 프로필이
+   * 하나씩 늘어나고, 투숙 이력과 선호가 여러 프로필로 흩어져 결국 사람이 손으로
+   * 병합해야 한다. 만들지 않는 편이 지우는 것보다 훨씬 싸다.
+   *
+   * 이메일이 유일한 단서다. 이름은 동명이인이 흔해 근거로 쓸 수 없다.
+   */
+  private async knownProfileId(email?: string): Promise<string | undefined> {
+    if (!email) return undefined;
+
+    const existing = await this.prisma.profile.findFirst({
+      where: {
+        email: { equals: email.trim(), mode: Prisma.QueryMode.insensitive },
+        operaProfileId: { not: null },
+        // 병합된 프로필로 붙이면 방금 정리한 중복이 되살아난다.
+        mergedIntoId: null,
+      },
+      select: { operaProfileId: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return existing?.operaProfileId ?? undefined;
   }
 
   private async loadLinked(id: string, user: AuthUser) {

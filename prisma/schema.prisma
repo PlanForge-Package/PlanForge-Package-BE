@@ -275,6 +275,14 @@ enum ProfileType {
   GROUP
 }
 
+/// 멤버십 등급. 호텔 체인마다 이름이 다르므로 코드로 두고 표기는 화면이 맡는다.
+enum MembershipTier {
+  NONE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
 model Profile {
   id             String      @id @default(cuid())
   /// OPERA profileId
@@ -287,13 +295,41 @@ model Profile {
   phone          String?
   nationality    String?
   vip            Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+
+  /// 멤버십 번호. 체인 로열티 프로그램의 식별자.
+  membershipNumber String?
+  membershipTier   MembershipTier @default(NONE)
+
+  /**
+   * 선호 사항. 고층·금연·베개 종류처럼 배정에 영향을 주는 것들.
+   *
+   * 자유 텍스트가 아니라 코드 배열로 둔다. 텍스트로 받으면 "고층"·"높은 층"·
+   * "high floor" 가 뒤섞여 배정할 때 아무도 걸러낼 수 없다.
+   */
+  preferences String[] @default([])
+
+  /// 프론트에서 남기는 내부 메모. 게스트에게 노출하지 않는다.
+  notes String?
+
+  /**
+   * 중복으로 판명되어 다른 프로필로 합쳐진 경우 그 대상.
+   *
+   * 지우지 않는 이유는 과거 예약이 이 프로필을 참조하고 있어서다. 삭제하면
+   * 예약의 게스트가 사라지고, 남겨 두면 어느 쪽이 정본인지 알 수 있다.
+   */
+  mergedIntoId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   reservations Reservation[]
+  mergedInto   Profile?      @relation("ProfileMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedFrom   Profile[]     @relation("ProfileMerge")
 
   @@index([email])
   @@index([lastName, firstName])
+  @@index([membershipNumber])
+  @@index([mergedIntoId])
   @@map("profiles")
 }
 

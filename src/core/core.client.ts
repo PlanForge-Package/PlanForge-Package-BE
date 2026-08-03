@@ -10,6 +10,7 @@ import type {
   CoreBusinessDate,
   CoreCreateBlockInput,
   CoreCreateReservationInput,
+  CoreProfile,
   CoreRateParams,
   CoreRateResponse,
   CoreReservation,
@@ -119,6 +120,19 @@ export class CoreClient {
       `/v1/housekeeping/rooms/${encodeURIComponent(roomNumber)}/status`,
       undefined,
       { method: 'PUT', json: input },
+    );
+  }
+
+  /**
+   * 프로필 병합.
+   *
+   * 로컬에서만 합치면 OPERA 에는 여전히 둘이고, 다음 동기화가 지운 쪽을 되살린다.
+   */
+  mergeProfile(profileId: string, targetProfileId: string): Promise<CoreProfile> {
+    return this.request<CoreProfile>(
+      `/v1/profiles/${encodeURIComponent(profileId)}/merge`,
+      undefined,
+      { method: 'POST', json: { targetProfileId } },
     );
   }
 
