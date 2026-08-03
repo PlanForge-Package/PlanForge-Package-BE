@@ -95,6 +95,13 @@ CREATE DATABASE planforge OWNER planforge;
 | `GET` | `/api/profiles/:id/duplicates` | 중복 후보와 그 근거 |
 | `PATCH` | `/api/profiles/:id` | 선호·멤버십·내부 메모 수정 |
 | `POST` | `/api/profiles/:id/merge` | 중복 병합 (MANAGER) |
+| `GET` | `/api/pos-outlets` | POS 아웃렛 목록 (MANAGER) |
+| `POST` | `/api/pos-outlets` | 아웃렛 등록 — 키는 이 응답에서만 (MANAGER) |
+| `PATCH` | `/api/pos-outlets/:id` | 이름·거래 코드·사용 여부 (MANAGER) |
+| `POST` | `/api/pos-outlets/:id/rotate-key` | 키 재발급 (MANAGER) |
+| `GET` | `/api/pos/rooms` | 요금을 달 수 있는 객실 (아웃렛 키) |
+| `POST` | `/api/pos/charges` | 룸차지 (아웃렛 키) |
+| `POST` | `/api/pos/charges/void` | 룸차지 취소 (아웃렛 키) |
 | `GET` | `/api/reports/daily` | 일별 실적 — 점유율·ADR·RevPAR·매출 (MANAGER) |
 | `GET` | `/api/night-audit` | 야간 감사 점검표 — 마감을 막는 항목 |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | 노쇼 처리 (OPERA 위임) |
@@ -126,6 +133,26 @@ CREATE DATABASE planforge OWNER planforge;
 둘을 섞으면 "매출이 왜 다른가" 를 아무도 설명할 수 없게 됩니다. 정산 대사에는 포스팅을,
 판매 지표에는 계약 기준을 씁니다. `Posting.amount` 는 저장 시점에 이미 부호가 붙어 있어
 (결제는 음수) 미수는 단순 합계입니다.
+
+### POS 인터페이스
+
+레스토랑·바 같은 외부 단말이 객실로 요금을 다는 통로입니다. **직원 JWT 를 쓰지 않습니다** —
+단말에 직원 비밀번호를 심게 되고 그 단말이 직원 권한 전부를 얻기 때문입니다. 아웃렛마다
+자기 키(`x-pos-key`)를 발급하고, 그 키로 할 수 있는 일은 재실 객실에 요금을 달고 자기가 단
+요금을 취소하는 것뿐입니다. 예약이나 손님 정보는 읽지 못하고, 객실 목록도 **객실 번호와
+성만** 돌려줍니다 — 매장 단말에 손님 명단이 통째로 뜨면 그 자체로 유출입니다.
+
+키는 bcrypt 해시로만 저장하므로 발급 순간에만 볼 수 있습니다. 앞자리(`apiKeyPrefix`)는
+비밀이 아니므로 후보를 좁히는 인덱스로 씁니다 — 전부 bcrypt 로 비교하면 아웃렛 수만큼 해시
+연산이 돌아 룸차지 한 건이 수백 밀리초씩 걸립니다.
+
+**중복 청구 방지가 이 인터페이스의 핵심입니다.** 네트워크가 끊겨 POS 가 같은 요청을 다시
+보내는 일은 흔하고, 손님에게 두 번 청구되면 되돌리기 어렵습니다. `(outletId, reference)`
+고유 제약으로 막고, 재전송이면 새로 달지 않고 이미 단 것을 성공으로 돌려줍니다 — 그래야
+POS 의 재시도가 멈춥니다. 동시 요청은 조회로 못 잡으므로 고유 제약이 마지막 방어선입니다.
+
+취소는 원본을 지우지 않고 반대 부호의 조정을 하나 더 답니다. 지우면 손님 명세서에서 요금이
+통째로 사라져 무엇이 어떻게 정정됐는지 설명할 수 없습니다.
 
 ### 게스트 프로필
 
