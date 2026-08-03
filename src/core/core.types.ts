@@ -94,6 +94,14 @@ export interface CoreRateParams {
   ratePlanCode?: string;
 }
 
+/** Core 가 OPERA 에서 받아 정규화한 객실 상태. */
+export interface CoreRoomStatus {
+  hotelId: string;
+  roomNumber: string;
+  status: string;
+  occupied?: boolean;
+}
+
 export interface CoreCreateReservationInput {
   hotelId?: string;
   arrivalDate: string;

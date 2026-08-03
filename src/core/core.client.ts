@@ -10,6 +10,7 @@ import type {
   CoreReservation,
   CoreReservationListParams,
   CoreReservationListResponse,
+  CoreRoomStatus,
   CoreUpdateReservationInput,
 } from './core.types';
 
@@ -71,6 +72,17 @@ export class CoreClient {
       `/v1/reservations/${encodeURIComponent(reservationId)}`,
       undefined,
       { method: 'PATCH', json: input },
+    );
+  }
+
+  updateRoomStatus(
+    roomNumber: string,
+    input: { hotelId?: string; status: string; reason?: string },
+  ): Promise<CoreRoomStatus> {
+    return this.request<CoreRoomStatus>(
+      `/v1/housekeeping/rooms/${encodeURIComponent(roomNumber)}/status`,
+      undefined,
+      { method: 'PUT', json: input },
     );
   }
 

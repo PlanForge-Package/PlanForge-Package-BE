@@ -30,20 +30,21 @@ enum UserRole {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   /// bcrypt 해시. 평문은 어디에도 저장하지 않는다.
   passwordHash String
   name         String
-  role         UserRole @default(FRONT_DESK)
+  role         UserRole  @default(FRONT_DESK)
   /// 소속 호텔. null 이면 전 호텔 접근(본사 계정).
   propertyId   String?
-  active       Boolean  @default(true)
+  active       Boolean   @default(true)
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  property Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  property          Property?          @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  housekeepingTasks HousekeepingTask[]
 
   @@index([propertyId])
   @@map("users")
@@ -54,22 +55,23 @@ model User {
 // ---------------------------------------------------------------------------
 
 model Property {
-  id            String   @id @default(cuid())
+  id           String   @id @default(cuid())
   /// OPERA hotelId (chain 내 호텔 코드)
-  operaHotelId  String   @unique
-  name          String
-  timezone      String   @default("Asia/Seoul")
-  currency      String   @default("KRW")
-  address       String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  operaHotelId String   @unique
+  name         String
+  timezone     String   @default("Asia/Seoul")
+  currency     String   @default("KRW")
+  address      String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  roomTypes    RoomType[]
-  rooms        Room[]
-  ratePlans    RatePlan[]
-  reservations Reservation[]
-  users        User[]
+  roomTypes         RoomType[]
+  rooms             Room[]
+  ratePlans         RatePlan[]
+  reservations      Reservation[]
+  users             User[]
+  housekeepingTasks HousekeepingTask[]
 
   @@map("properties")
 }
@@ -116,6 +118,8 @@ model Room {
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   roomType RoomType @relation(fields: [roomTypeId], references: [id])
 
+  housekeepingTasks HousekeepingTask[]
+
   @@unique([propertyId, number])
   @@index([propertyId, status])
   @@map("rooms")
@@ -142,6 +146,51 @@ model RatePlan {
 }
 
 // ---------------------------------------------------------------------------
+// 하우스키핑 작업 배정
+// ---------------------------------------------------------------------------
+
+/// 청소 작업 진행 상태. 객실 상태(RoomStatus)와는 다르다 —
+/// 이쪽은 "직원이 어디까지 했는가", 저쪽은 "객실이 팔 수 있는 상태인가" 다.
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  /// 점검까지 끝남. 객실 상태를 INSPECTED 로 올릴 근거가 된다.
+  INSPECTED
+}
+
+/**
+ * 하우스키핑 작업 배정.
+ * 객실 상태는 OPERA 가 원천이지만, "누가 어느 객실을 청소하는가" 는 직원 근무
+ * 편성이라 OPERA 에 보내지 않는다. PlanForge 가 소유한다.
+ */
+model HousekeepingTask {
+  id           String     @id @default(cuid())
+  propertyId   String
+  roomId       String
+  /// 배정된 직원. 아직 배정 전이면 null.
+  assignedToId String?
+  /// 근무일. 같은 객실이라도 날짜마다 별개의 작업이다.
+  date         DateTime   @db.Date
+  status       TaskStatus @default(PENDING)
+  notes        String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  assignedTo User?    @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  /// 같은 객실·같은 날짜에 작업이 둘 생기면 누가 담당인지 알 수 없다.
+  @@unique([roomId, date])
+  @@index([propertyId, date, status])
+  @@index([assignedToId, date])
+  @@map("housekeeping_tasks")
+}
+
+// ---------------------------------------------------------------------------
 // 프로필 (OPERA Profile)
 // ---------------------------------------------------------------------------
 
@@ -153,19 +202,19 @@ enum ProfileType {
 }
 
 model Profile {
-  id            String      @id @default(cuid())
+  id             String      @id @default(cuid())
   /// OPERA profileId
-  operaProfileId String?    @unique
-  type          ProfileType @default(GUEST)
-  firstName     String?
-  lastName      String?
-  companyName   String?
-  email         String?
-  phone         String?
-  nationality   String?
-  vip           Boolean     @default(false)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  operaProfileId String?     @unique
+  type           ProfileType @default(GUEST)
+  firstName      String?
+  lastName       String?
+  companyName    String?
+  email          String?
+  phone          String?
+  nationality    String?
+  vip            Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   reservations Reservation[]
 
@@ -189,27 +238,27 @@ enum ReservationStatus {
 }
 
 model Reservation {
-  id                    String            @id @default(cuid())
+  id                 String            @id @default(cuid())
   /// OPERA reservationId
-  operaReservationId    String?           @unique
+  operaReservationId String?           @unique
   /// 게스트에게 노출하는 확인 번호
-  confirmationNumber    String            @unique
-  propertyId            String
-  profileId             String
-  roomTypeId            String
-  ratePlanId            String?
-  status                ReservationStatus @default(RESERVED)
-  arrivalDate           DateTime          @db.Date
-  departureDate         DateTime          @db.Date
-  adults                Int               @default(1)
-  children              Int               @default(0)
+  confirmationNumber String            @unique
+  propertyId         String
+  profileId          String
+  roomTypeId         String
+  ratePlanId         String?
+  status             ReservationStatus @default(RESERVED)
+  arrivalDate        DateTime          @db.Date
+  departureDate      DateTime          @db.Date
+  adults             Int               @default(1)
+  children           Int               @default(0)
   /// 배정된 객실 번호. 미배정이면 null.
-  assignedRoomNumber    String?
-  totalAmount           Decimal?          @db.Decimal(12, 2)
-  currency              String            @default("KRW")
-  notes                 String?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+  assignedRoomNumber String?
+  totalAmount        Decimal?          @db.Decimal(12, 2)
+  currency           String            @default("KRW")
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   property Property  @relation(fields: [propertyId], references: [id])
   profile  Profile   @relation(fields: [profileId], references: [id])
@@ -259,16 +308,16 @@ enum PostingType {
 }
 
 model Posting {
-  id                String      @id @default(cuid())
-  folioId           String
-  type              PostingType
+  id              String      @id @default(cuid())
+  folioId         String
+  type            PostingType
   /// OPERA transactionCode
-  transactionCode   String
-  description       String
-  amount            Decimal     @db.Decimal(12, 2)
-  currency          String      @default("KRW")
-  postedAt          DateTime    @default(now())
-  createdAt         DateTime    @default(now())
+  transactionCode String
+  description     String
+  amount          Decimal     @db.Decimal(12, 2)
+  currency        String      @default("KRW")
+  postedAt        DateTime    @default(now())
+  createdAt       DateTime    @default(now())
 
   folio Folio @relation(fields: [folioId], references: [id], onDelete: Cascade)
 

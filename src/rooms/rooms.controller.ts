@@ -1,12 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
-import { Roles } from '../auth/auth.constants';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { ListRoomsDto, UpdateRoomStatusDto } from './dto/rooms.dto';
+import { ListRoomsDto } from './dto/rooms.dto';
 import { RoomsService } from './rooms.service';
 
+/**
+ * 객실 조회.
+ *
+ * 상태 변경은 OPERA 위임이 필요해 HousekeepingController 가 맡는다
+ * (`PATCH /housekeeping/rooms/:id/status`). 조회와 쓰기를 나눠 둔 이유는,
+ * 쓰기가 외부 시스템 호출을 동반하기 때문이다.
+ */
 @ApiTags('rooms')
 @ApiBearerAuth()
 @Controller('rooms')
@@ -24,16 +29,5 @@ export class RoomsController {
   @ApiOperation({ summary: '객실 상태별 집계' })
   summary(@Query('propertyId') propertyId: string, @CurrentUser() user: AuthUser) {
     return this.rooms.statusSummary(propertyId, user);
-  }
-
-  @Patch(':id/status')
-  @Roles(UserRole.MANAGER, UserRole.FRONT_DESK, UserRole.HOUSEKEEPING)
-  @ApiOperation({ summary: '하우스키핑 상태 변경' })
-  updateStatus(
-    @Param('id') id: string,
-    @Body() dto: UpdateRoomStatusDto,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.rooms.updateStatus(id, dto, user);
   }
 }

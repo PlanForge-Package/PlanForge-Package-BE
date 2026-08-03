@@ -77,6 +77,13 @@ CREATE DATABASE planforge OWNER planforge;
 | `POST` | `/api/reservations/:id/folios` | 폴리오 윈도 추가 개설 (분할 정산) |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | 청구·결제 등록 후 잔액 재계산 |
 | `GET` | `/api/rooms` | 객실 목록 |
+| `GET` | `/api/housekeeping/tasks` | 근무일 작업 — 하우스키핑은 본인 것만 |
+| `POST` | `/api/housekeeping/tasks/generate` | 근무일 작업 생성 |
+| `PATCH` | `/api/housekeeping/tasks/:id/assign` | 작업 배정·해제 |
+| `PATCH` | `/api/housekeeping/tasks/:id` | 작업 진행 상태 변경 |
+| `PATCH` | `/api/housekeeping/rooms/:id/status` | 객실 상태 변경 (OPERA 위임) |
+| `GET` | `/api/housekeeping/attendants` | 배정 가능한 직원 |
+| `GET` | `/api/housekeeping/discrepancies` | 객실 상태·재실 불일치 |
 | `GET` | `/api/rooms/summary` | 객실 상태별 집계 |
 | `PATCH` | `/api/rooms/:id/status` | 하우스키핑 상태 변경 |
 | `POST` | `/api/sync/reservations` | Core 를 통해 OPERA 예약 동기화 |
@@ -110,6 +117,24 @@ CREATE DATABASE planforge OWNER planforge;
 비활성화될 수 있어, 토큰만 믿으면 해고된 직원이 남은 시간 동안 계속 접근합니다.
 
 `JWT_SECRET` 이 없거나 32자 미만이면 서버가 기동하지 않습니다.
+
+### 하우스키핑
+
+**객실 상태는 OPERA 가 원천**이라 변경을 위임합니다. 프론트데스크의 재고 판단과
+하우스키핑의 청소 상태가 같은 값을 봐야 하는데, PlanForge 가 따로 들고 있으면
+체크인 가능 여부가 두 시스템에서 달라집니다.
+
+반면 **"누가 어느 객실을 청소하는가"는 PlanForge 가 소유**합니다. 직원 근무 편성이라
+OPERA 에 보낼 성질이 아닙니다. `HousekeepingTask` 가 이를 담습니다.
+
+작업 상태(`TaskStatus`)와 객실 상태(`RoomStatus`)는 다릅니다 — 앞은 "직원이 어디까지
+했는가", 뒤는 "객실이 팔 수 있는 상태인가" 입니다.
+
+하우스키핑 역할은 **본인에게 배정된 작업만** 조회·변경할 수 있습니다. 남의 작업을
+완료 처리하면 실제로는 청소되지 않은 객실이 판매 가능으로 올라갑니다.
+
+`/housekeeping/discrepancies` 는 객실 상태와 재실이 어긋난 곳을 뽑습니다 — 체크아웃
+누락, 배정 불일치, 재실 중 청소 완료 표시. 하우스키핑이 매일 확인하는 항목입니다.
 
 ### 다중 호텔과 데이터 격리
 

@@ -1,9 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, RoomStatus } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
-import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
-import type { ListRoomsDto, UpdateRoomStatusDto } from './dto/rooms.dto';
+import { resolvePropertyScope } from '../properties/property-scope';
+import type { ListRoomsDto } from './dto/rooms.dto';
 
 @Injectable()
 export class RoomsService {
@@ -25,26 +25,7 @@ export class RoomsService {
     });
   }
 
-  /**
-   * 하우스키핑 상태 변경.
-   *
-   * 재실 중인 객실을 판매 불가로 돌리면 재고와 실제가 어긋나므로 막는다.
-   */
-  async updateStatus(id: string, dto: UpdateRoomStatusDto, user: AuthUser) {
-    const room = await this.prisma.room.findUnique({ where: { id } });
-    if (!room) {
-      throw new NotFoundException(`객실을 찾을 수 없습니다: ${id}`);
-    }
-    assertWithinScope(user, room.propertyId);
-
-    const blocking =
-      dto.status === RoomStatus.OUT_OF_ORDER || dto.status === RoomStatus.OUT_OF_SERVICE;
-    if (room.occupied && blocking) {
-      throw new BadRequestException('재실 중인 객실은 판매 불가 상태로 변경할 수 없습니다.');
-    }
-
-    return this.prisma.room.update({ where: { id }, data: { status: dto.status } });
-  }
+  // 객실 상태 변경은 OPERA 위임이 필요해 HousekeepingService 로 옮겼다.
 
   /** 객실 상태별 집계. 하우스키핑 보드용. */
   async statusSummary(requestedPropertyId: string, user: AuthUser) {

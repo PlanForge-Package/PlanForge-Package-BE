@@ -1,7 +1,9 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { RoomStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+
+// 상태 변경 DTO 는 housekeeping/dto 로 옮겼다 — OPERA 위임이 필요한 쓰기이기 때문이다.
 
 export class ListRoomsDto {
   @ApiPropertyOptional({ description: 'PlanForge Property ID' })
@@ -19,10 +21,4 @@ export class ListRoomsDto {
   @Type(() => Boolean)
   @IsBoolean()
   occupied?: boolean;
-}
-
-export class UpdateRoomStatusDto {
-  @ApiProperty({ enum: RoomStatus, description: '하우스키핑 상태' })
-  @IsEnum(RoomStatus)
-  status!: RoomStatus;
 }
