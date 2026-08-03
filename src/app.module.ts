@@ -11,6 +11,7 @@ import { HousekeepingModule } from './housekeeping/housekeeping.module';
 import { NightAuditModule } from './night-audit/night-audit.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PropertiesModule } from './properties/properties.module';
+import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { SyncModule } from './sync/sync.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     HousekeepingModule,
     NightAuditModule,
     PropertiesModule,
+    ReportsModule,
     ReservationsModule,
     RoomsModule,
     SyncModule,

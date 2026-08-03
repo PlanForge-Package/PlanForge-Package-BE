@@ -90,6 +90,7 @@ CREATE DATABASE planforge OWNER planforge;
 | `GET` | `/api/blocks/:id/reservations` | 룸리스트 — 이 블록에서 빠져나간 예약 |
 | `POST` | `/api/blocks` | 블록 생성 (MANAGER 이상) |
 | `PATCH` | `/api/blocks/:id` | 블록 수정 — 이름·상태·컷오프 (MANAGER 이상) |
+| `GET` | `/api/reports/daily` | 일별 실적 — 점유율·ADR·RevPAR·매출 (MANAGER) |
 | `GET` | `/api/night-audit` | 야간 감사 점검표 — 마감을 막는 항목 |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | 노쇼 처리 (OPERA 위임) |
 | `POST` | `/api/sync/reservations` | Core 를 통해 OPERA 예약 동기화 |
@@ -108,6 +109,22 @@ CREATE DATABASE planforge OWNER planforge;
 
 영업일은 Core 를 통해 OPERA 에서 읽습니다. 닿지 못하면 달력 날짜로 대신하되 그 사실을
 응답에 실어 보냅니다 — 잘못된 날짜로 마감 판단을 조용히 내리면 매출이 하루 밀려 붙습니다.
+
+### 실적
+
+두 가지 매출을 분명히 나눕니다.
+
+- **객실 매출(계약 기준)** — 예약 총액을 박수로 나눠 각 날짜에 배분한 값. OPERA 가 확정한
+  금액이라 모든 예약에 있고, 점유율·ADR·RevPAR 의 근거가 됩니다.
+- **폴리오 청구(실제 계상)** — 폴리오에 올라간 청구·결제·조정. 체크인 이후에만 생깁니다.
+
+둘을 섞으면 "매출이 왜 다른가" 를 아무도 설명할 수 없게 됩니다. 정산 대사에는 포스팅을,
+판매 지표에는 계약 기준을 씁니다. `Posting.amount` 는 저장 시점에 이미 부호가 붙어 있어
+(결제는 음수) 미수는 단순 합계입니다.
+
+점유율의 분모는 **현재** 고장·판매중지가 아닌 객실 수입니다. 과거 시점의 고장 이력은
+남기지 않으므로 그때의 실제 가용 객실과 다를 수 있고, 이 근거를 응답과 화면에 함께
+표시합니다. 회계 마감용 공식 수치는 OPERA 의 리포트를 따릅니다.
 
 ### 인증과 권한
 
