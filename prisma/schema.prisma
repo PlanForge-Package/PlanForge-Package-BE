@@ -1,0 +1,272 @@
+// PlanForge BE — 호텔 관리 플랫폼 데이터 모델
+//
+// Oracle OPERA Cloud 의 개념(Property / Room Type / Profile / Reservation / Folio)을
+// 그대로 따르되, PlanForge 자체 식별자를 1차 키로 두고 OPERA 식별자는 `opera*Id`
+// 필드로 함께 보관한다. Core(API Server)가 OHIP 과 동기화할 때 이 필드를 매칭 키로 쓴다.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// 조직 / 자산
+// ---------------------------------------------------------------------------
+
+model Property {
+  id            String   @id @default(cuid())
+  /// OPERA hotelId (chain 내 호텔 코드)
+  operaHotelId  String   @unique
+  name          String
+  timezone      String   @default("Asia/Seoul")
+  currency      String   @default("KRW")
+  address       String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  roomTypes    RoomType[]
+  rooms        Room[]
+  ratePlans    RatePlan[]
+  reservations Reservation[]
+
+  @@map("properties")
+}
+
+model RoomType {
+  id           String   @id @default(cuid())
+  propertyId   String
+  /// OPERA roomType 코드 (예: DLXK)
+  code         String
+  name         String
+  description  String?
+  maxOccupancy Int      @default(2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  rooms        Room[]
+  reservations Reservation[]
+
+  @@unique([propertyId, code])
+  @@map("room_types")
+}
+
+enum RoomStatus {
+  CLEAN
+  DIRTY
+  INSPECTED
+  OUT_OF_ORDER
+  OUT_OF_SERVICE
+}
+
+model Room {
+  id         String     @id @default(cuid())
+  propertyId String
+  roomTypeId String
+  /// OPERA roomId (객실 번호)
+  number     String
+  floor      String?
+  status     RoomStatus @default(CLEAN)
+  occupied   Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomType RoomType @relation(fields: [roomTypeId], references: [id])
+
+  @@unique([propertyId, number])
+  @@index([propertyId, status])
+  @@map("rooms")
+}
+
+model RatePlan {
+  id         String   @id @default(cuid())
+  propertyId String
+  /// OPERA rateCode
+  code       String
+  name       String
+  /// 최소 판매가(스냅샷). 실제 요금은 Core 를 통해 OPERA 에서 조회한다.
+  baseAmount Decimal? @db.Decimal(12, 2)
+  currency   String   @default("KRW")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  property     Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+
+  @@unique([propertyId, code])
+  @@map("rate_plans")
+}
+
+// ---------------------------------------------------------------------------
+// 프로필 (OPERA Profile)
+// ---------------------------------------------------------------------------
+
+enum ProfileType {
+  GUEST
+  COMPANY
+  TRAVEL_AGENT
+  GROUP
+}
+
+model Profile {
+  id            String      @id @default(cuid())
+  /// OPERA profileId
+  operaProfileId String?    @unique
+  type          ProfileType @default(GUEST)
+  firstName     String?
+  lastName      String?
+  companyName   String?
+  email         String?
+  phone         String?
+  nationality   String?
+  vip           Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  reservations Reservation[]
+
+  @@index([email])
+  @@index([lastName, firstName])
+  @@map("profiles")
+}
+
+// ---------------------------------------------------------------------------
+// 예약 (OPERA Reservation)
+// ---------------------------------------------------------------------------
+
+enum ReservationStatus {
+  RESERVED
+  CONFIRMED
+  IN_HOUSE
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+  WAITLISTED
+}
+
+model Reservation {
+  id                    String            @id @default(cuid())
+  /// OPERA reservationId
+  operaReservationId    String?           @unique
+  /// 게스트에게 노출하는 확인 번호
+  confirmationNumber    String            @unique
+  propertyId            String
+  profileId             String
+  roomTypeId            String
+  ratePlanId            String?
+  status                ReservationStatus @default(RESERVED)
+  arrivalDate           DateTime          @db.Date
+  departureDate         DateTime          @db.Date
+  adults                Int               @default(1)
+  children              Int               @default(0)
+  /// 배정된 객실 번호. 미배정이면 null.
+  assignedRoomNumber    String?
+  totalAmount           Decimal?          @db.Decimal(12, 2)
+  currency              String            @default("KRW")
+  notes                 String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  property Property  @relation(fields: [propertyId], references: [id])
+  profile  Profile   @relation(fields: [profileId], references: [id])
+  roomType RoomType  @relation(fields: [roomTypeId], references: [id])
+  ratePlan RatePlan? @relation(fields: [ratePlanId], references: [id])
+  folios   Folio[]
+
+  @@index([propertyId, arrivalDate])
+  @@index([propertyId, status])
+  @@map("reservations")
+}
+
+// ---------------------------------------------------------------------------
+// 회계 (OPERA Folio / Transaction)
+// ---------------------------------------------------------------------------
+
+enum FolioStatus {
+  OPEN
+  CLOSED
+}
+
+model Folio {
+  id            String      @id @default(cuid())
+  /// OPERA folioId
+  operaFolioId  String?     @unique
+  reservationId String
+  /// OPERA folio window 번호 (1~8)
+  window        Int         @default(1)
+  status        FolioStatus @default(OPEN)
+  balance       Decimal     @default(0) @db.Decimal(12, 2)
+  currency      String      @default("KRW")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  postings    Posting[]
+
+  @@unique([reservationId, window])
+  @@map("folios")
+}
+
+enum PostingType {
+  CHARGE
+  PAYMENT
+  ADJUSTMENT
+  TAX
+}
+
+model Posting {
+  id                String      @id @default(cuid())
+  folioId           String
+  type              PostingType
+  /// OPERA transactionCode
+  transactionCode   String
+  description       String
+  amount            Decimal     @db.Decimal(12, 2)
+  currency          String      @default("KRW")
+  postedAt          DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+
+  folio Folio @relation(fields: [folioId], references: [id], onDelete: Cascade)
+
+  @@index([folioId, postedAt])
+  @@map("postings")
+}
+
+// ---------------------------------------------------------------------------
+// 운영 / 감사
+// ---------------------------------------------------------------------------
+
+enum SyncDirection {
+  PULL
+  PUSH
+}
+
+enum SyncStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+/// Core 를 통한 OPERA 동기화 이력. 재시도·조사 목적.
+model SyncLog {
+  id         String        @id @default(cuid())
+  entity     String
+  entityId   String?
+  direction  SyncDirection
+  status     SyncStatus    @default(PENDING)
+  error      String?
+  payload    Json?
+  startedAt  DateTime      @default(now())
+  finishedAt DateTime?
+
+  @@index([entity, entityId])
+  @@index([status, startedAt])
+  @@map("sync_logs")
+}

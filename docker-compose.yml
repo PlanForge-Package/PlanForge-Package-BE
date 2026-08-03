@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: planforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: planforge
+      POSTGRES_PASSWORD: planforge
+      POSTGRES_DB: planforge
+    ports:
+      - '5432:5432'
+    volumes:
+      - planforge-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U planforge -d planforge']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  planforge-pgdata:

@@ -1,8 +1,0 @@
-/* 인증 제공사 브랜드 규정색 — DS 토큰이 아닌 고정 브랜드 컬러라 여기서만 하드코딩(변경 금지).
-   카카오 #FEE500/#191919, 네이버 #03C75A/#FFFFFF. PASS·공동·금융 계열은 뉴트럴 토큰 사용. */
-:root {
-  --kr-auth-kakao-bg: #fee500;
-  --kr-auth-kakao-fg: #191919;
-  --kr-auth-naver-bg: #03c75a;
-  --kr-auth-naver-fg: #ffffff;
-}

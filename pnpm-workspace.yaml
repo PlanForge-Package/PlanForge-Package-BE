@@ -1,7 +1,0 @@
-packages:
-  - 'figma-plugin'
-allowBuilds:
-  '@bundled-es-modules/glob': false
-  '@parcel/watcher': true
-  esbuild: true
-  style-dictionary: false
