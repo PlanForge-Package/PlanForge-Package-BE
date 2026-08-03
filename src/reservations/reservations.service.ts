@@ -7,6 +7,7 @@ import {
   type Reservation,
 } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
+import { DoorLockService } from '../doorlock/doorlock.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly } from '../sync/reservation.mapper';
@@ -28,7 +29,10 @@ const RESERVATION_INCLUDE = {
 
 @Injectable()
 export class ReservationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly doorLock: DoorLockService,
+  ) {}
 
   async list(query: ListReservationsDto, user: AuthUser) {
     const {
@@ -131,6 +135,20 @@ export class ReservationsService {
       if (room.occupied && reservation.assignedRoomNumber !== roomNumber) {
         throw new BadRequestException(`객실 ${roomNumber} 은 이미 사용 중입니다.`);
       }
+
+      /*
+       * 객실이 바뀌면 이전 방 카드를 죽인다.
+       *
+       * 남겨 두면 손님이 예전 방 문을 계속 열 수 있고, 그 방에는 곧 다른 손님이
+       * 들어온다. 트랜잭션 안에서 부르는 이유는 배정 변경과 함께 성립해야 하기
+       * 때문이다 — 카드를 못 죽였으면 객실도 바꾸지 않는다.
+       */
+      if (reservation.assignedRoomNumber && reservation.assignedRoomNumber !== roomNumber) {
+        await this.doorLock.revokeActive(
+          id,
+          `객실 변경 ${reservation.assignedRoomNumber} → ${roomNumber}`,
+        );
+      }
       if (room.status === RoomStatus.OUT_OF_ORDER || room.status === RoomStatus.OUT_OF_SERVICE) {
         throw new BadRequestException(
           `객실 ${roomNumber} 은 판매 불가 상태(${room.status})입니다.`,
@@ -186,6 +204,14 @@ export class ReservationsService {
       if (!outstanding.isZero()) {
         throw new BadRequestException(`미결제 잔액이 남아 있습니다: ${outstanding.toString()}`);
       }
+
+      /*
+       * 나가는 손님의 카드를 반드시 죽인다.
+       *
+       * 이 도메인에서 가장 위험한 실패다 — 살려 두면 체크아웃한 손님이 다음
+       * 손님이 들어온 방을 연다. 실패하면 체크아웃 자체를 되돌린다.
+       */
+      await this.doorLock.revokeActive(id, '체크아웃');
 
       await tx.folio.updateMany({
         where: { reservationId: id, status: FolioStatus.OPEN },

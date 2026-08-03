@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { BlocksModule } from './blocks/blocks.module';
 import { CoreModule } from './core/core.module';
+import { DoorLockModule } from './doorlock/doorlock.module';
 import { FoliosModule } from './folios/folios.module';
 import { HealthModule } from './health/health.module';
 import { HousekeepingModule } from './housekeeping/housekeeping.module';
@@ -28,6 +29,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     BlocksModule,
     CoreModule,
+    DoorLockModule,
     HealthModule,
     FoliosModule,
     HousekeepingModule,

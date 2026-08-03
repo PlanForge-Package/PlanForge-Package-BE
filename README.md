@@ -95,6 +95,9 @@ CREATE DATABASE planforge OWNER planforge;
 | `GET` | `/api/profiles/:id/duplicates` | 중복 후보와 그 근거 |
 | `PATCH` | `/api/profiles/:id` | 선호·멤버십·내부 메모 수정 |
 | `POST` | `/api/profiles/:id/merge` | 중복 병합 (MANAGER) |
+| `GET` | `/api/reservations/:id/keys` | 발급된 객실 키 이력 |
+| `POST` | `/api/reservations/:id/keys` | 객실 키 발급 |
+| `POST` | `/api/door-keys/:keyId/revoke` | 객실 키 무효화 |
 | `GET` | `/api/pos-outlets` | POS 아웃렛 목록 (MANAGER) |
 | `POST` | `/api/pos-outlets` | 아웃렛 등록 — 키는 이 응답에서만 (MANAGER) |
 | `PATCH` | `/api/pos-outlets/:id` | 이름·거래 코드·사용 여부 (MANAGER) |
@@ -133,6 +136,26 @@ CREATE DATABASE planforge OWNER planforge;
 둘을 섞으면 "매출이 왜 다른가" 를 아무도 설명할 수 없게 됩니다. 정산 대사에는 포스팅을,
 판매 지표에는 계약 기준을 씁니다. `Posting.amount` 는 저장 시점에 이미 부호가 붙어 있어
 (결제는 음수) 미수는 단순 합계입니다.
+
+### 객실 키 (도어락)
+
+잠금장치는 벤더마다 프로토콜이 완전히 다릅니다 — Assa Abloy(Vingcard) · Salto · Onity 는
+카드 인코딩도, 연결 방식(로컬 인코더 SDK · 온프레미스 서버 · 클라우드 API)도 서로 맞지
+않습니다. 그래서 `DoorLockDriver` 인터페이스만 도메인이 알고, 실제 통신은 구현체 한 파일에
+가둡니다. 도메인이 벤더에게 요구하는 것은 두 가지뿐입니다: 카드를 만들고, 죽이는 것.
+
+**지금은 모의 드라이버만 있습니다.** 발급 이력은 남지만 실제 카드는 만들어지지 않으며,
+화면이 그 사실을 표시합니다. `DOORLOCK_MODE=live` 는 구현체가 없어 기동을 거부하고,
+운영 환경에서 모의 모드도 기동을 거부합니다 — 프런트가 카드를 발급했다고 믿는데 손님이
+방에 못 들어가는 상황이 최악입니다.
+
+가장 위험한 실패는 **카드가 살아 있는 채로 잊히는 것**입니다. 체크아웃한 손님의 카드가
+다음 손님이 들어온 방을 엽니다. 그래서 체크아웃과 객실 변경이 자동으로 남은 카드를 죽이고,
+그 호출이 실패하면 체크아웃·객실 변경 자체를 되돌립니다. 무효화는 **벤더에서 먼저** 죽이고
+로컬을 표시합니다 — 순서가 반대면 "죽었다고 적혀 있지만 실제로는 열리는 카드" 가 남습니다.
+
+유효 기간은 호텔 현지 시각 기준입니다. UTC 로 "출발일 12시" 를 잡으면 서울에서는 밤 9시가
+되어 카드가 반나절 더 살아 있습니다.
 
 ### POS 인터페이스
 
