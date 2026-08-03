@@ -5,6 +5,7 @@ import { Public } from './auth.constants';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './current-user.decorator';
 import { AuthUserDto, LoginDto, LoginResponseDto } from './dto/auth.dto';
+import { LoginThrottle } from './throttle';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -12,6 +13,7 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Public()
+  @LoginThrottle()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '로그인 후 액세스 토큰 발급' })

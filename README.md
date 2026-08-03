@@ -106,6 +106,43 @@ CREATE DATABASE planforge OWNER planforge;
 
 `JWT_SECRET` 이 없거나 32자 미만이면 서버가 기동하지 않습니다.
 
+로그인은 **IP 당 5분에 10회**로 제한합니다. 전역 제한(분당 120회)만으로는 비밀번호를
+수천 번 시도하기에 충분하기 때문입니다. 제한에 걸리면 올바른 자격으로도 429 를 받습니다.
+리버스 프록시 뒤에 둘 때는 `TRUST_PROXY=true` 를 켜야 합니다 — 켜지 않으면 모든 요청이
+프록시 IP 하나로 집계되어 한 사람이 전체 로그인을 잠급니다.
+
+## 배포
+
+`Dockerfile` 로 이미지를 만듭니다. 멀티스테이지에 비-root(`node`) 실행이며,
+`/api/health` 를 보는 HEALTHCHECK 가 들어 있습니다.
+
+```bash
+docker build -t planforge-be .
+```
+
+기동 시 `docker-entrypoint.sh` 가 `prisma migrate deploy` 를 먼저 돌립니다.
+`migrate deploy` 는 잠금을 잡고 이미 적용된 것을 건너뛰므로 여러 인스턴스가 동시에
+떠도 한 번만 실행됩니다. 별도 잡으로 빼려면 `RUN_MIGRATIONS=false` 로 끄세요.
+
+전체 스택은 `deploy/docker-compose.yml` 로 띄웁니다.
+
+```bash
+cd deploy
+cp .env.example .env    # 값 채우기
+docker compose up -d
+```
+
+외부에 노출되는 것은 FE 뿐이고 BE·Core·PostgreSQL 은 내부 네트워크에만 둡니다.
+Core 는 OPERA 자격 증명을 들고 있어 절대 외부에 열지 않습니다.
+
+이미지는 태그를 밀 때만 GHCR 에 발행됩니다 (`.github/workflows/release.yml`).
+main 에 푸시할 때마다 올리면 무엇이 배포되어 있는지 추적할 수 없고 롤백 지점도
+사라지기 때문입니다.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
 ### 폴리오 금액 규칙
 
 `amount` 는 **항상 양수**로 보냅니다. 잔액에 더할지 뺄지는 `type` 이 정합니다.
