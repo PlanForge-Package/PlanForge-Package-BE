@@ -4,9 +4,13 @@ import { CoreApiError, CoreUnreachableError } from './core.errors';
 import type {
   CoreAvailabilityParams,
   CoreAvailabilityResponse,
+  CoreCreateReservationInput,
+  CoreRateParams,
+  CoreRateResponse,
   CoreReservation,
   CoreReservationListParams,
   CoreReservationListResponse,
+  CoreUpdateReservationInput,
 } from './core.types';
 
 type Query = Record<string, string | number | boolean | undefined>;
@@ -46,7 +50,43 @@ export class CoreClient {
     return this.request<CoreReservation>(`/v1/reservations/${encodeURIComponent(reservationId)}`);
   }
 
-  private async request<T>(path: string, query?: Query): Promise<T> {
+  getRates(params: CoreRateParams): Promise<CoreRateResponse> {
+    return this.request<CoreRateResponse>('/v1/rates', { ...params });
+  }
+
+  // --- 쓰기. OPERA 가 재고·요금·확인 번호를 판단한다 --------------------------
+
+  createReservation(input: CoreCreateReservationInput): Promise<CoreReservation> {
+    return this.request<CoreReservation>('/v1/reservations', undefined, {
+      method: 'POST',
+      json: input,
+    });
+  }
+
+  updateReservation(
+    reservationId: string,
+    input: CoreUpdateReservationInput,
+  ): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}`,
+      undefined,
+      { method: 'PATCH', json: input },
+    );
+  }
+
+  cancelReservation(reservationId: string, reason?: string): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/cancel`,
+      undefined,
+      { method: 'POST', json: reason ? { reason } : {} },
+    );
+  }
+
+  private async request<T>(
+    path: string,
+    query?: Query,
+    options: { method?: string; json?: unknown } = {},
+  ): Promise<T> {
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) {
@@ -57,10 +97,13 @@ export class CoreClient {
     let res: Response;
     try {
       res = await fetch(url, {
+        method: options.method ?? 'GET',
         headers: {
           accept: 'application/json',
+          'content-type': 'application/json',
           ...(this.apiKey ? { 'x-api-key': this.apiKey } : {}),
         },
+        ...(options.json === undefined ? {} : { body: JSON.stringify(options.json) }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (cause) {

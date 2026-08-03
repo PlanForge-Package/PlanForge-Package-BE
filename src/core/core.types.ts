@@ -38,6 +38,8 @@ export interface CoreReservation {
   roomNumber?: string;
   adults?: number;
   children?: number;
+  totalAmount?: number;
+  currency?: string;
   guest?: {
     profileId?: string;
     firstName?: string;
@@ -60,6 +62,61 @@ export interface CoreReservationListParams {
   status?: CoreReservationStatus;
   limit?: number;
   offset?: number;
+}
+
+export interface CoreNightlyRate {
+  date: string;
+  amount: number;
+}
+
+export interface CoreRateOffer {
+  ratePlanCode: string;
+  roomTypeCode: string;
+  roomTypeName?: string;
+  currency: string;
+  nightlyRates: CoreNightlyRate[];
+  totalAmount: number;
+}
+
+export interface CoreRateResponse {
+  hotelId: string;
+  arrivalDate: string;
+  departureDate: string;
+  nights: number;
+  offers: CoreRateOffer[];
+}
+
+export interface CoreRateParams {
+  hotelId?: string;
+  arrivalDate: string;
+  departureDate: string;
+  roomTypeCode?: string;
+  ratePlanCode?: string;
+}
+
+export interface CoreCreateReservationInput {
+  hotelId?: string;
+  arrivalDate: string;
+  departureDate: string;
+  roomTypeCode: string;
+  ratePlanCode?: string;
+  adults: number;
+  children?: number;
+  guest: {
+    profileId?: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+  };
+}
+
+export interface CoreUpdateReservationInput {
+  arrivalDate?: string;
+  departureDate?: string;
+  roomTypeCode?: string;
+  ratePlanCode?: string;
+  adults?: number;
+  children?: number;
 }
 
 export interface CoreAvailabilityParams {

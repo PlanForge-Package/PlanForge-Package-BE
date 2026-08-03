@@ -1,9 +1,16 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { Roles } from '../auth/auth.constants';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { BookingService } from './booking.service';
+import {
+  CancelBookingDto,
+  CheckAvailabilityDto,
+  CreateBookingDto,
+  UpdateBookingDto,
+} from './dto/booking.dto';
 import { CheckInDto, CheckOutDto } from './dto/front-desk.dto';
 import { ListReservationsDto } from './dto/list-reservations.dto';
 import { ReservationsService } from './reservations.service';
@@ -14,8 +21,46 @@ import { ReservationsService } from './reservations.service';
 @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
 @Controller('reservations')
 export class ReservationsController {
-  constructor(private readonly reservations: ReservationsService) {}
+  constructor(
+    private readonly reservations: ReservationsService,
+    private readonly booking: BookingService,
+  ) {}
 
+  // --- OPERA 위임 --------------------------------------------------------
+  // 재고와 요금은 계산하지 않고 OPERA 에 묻는다. 두 시스템이 각자 계산하면
+  // 언젠가 값이 갈리고, 그때 어느 쪽이 맞는지 판단할 근거가 없다.
+
+  @Get('availability')
+  @ApiOperation({ summary: '가용 재고 조회 (OPERA)' })
+  availability(@Query() query: CheckAvailabilityDto, @CurrentUser() user: AuthUser) {
+    return this.booking.checkAvailability(query, user);
+  }
+
+  @Get('rates')
+  @ApiOperation({ summary: '기간 요금 조회 (OPERA)' })
+  rates(@Query() query: CheckAvailabilityDto, @CurrentUser() user: AuthUser) {
+    return this.booking.getRates(query, user);
+  }
+
+  @Post()
+  @ApiOperation({ summary: '예약 생성 — OPERA 에 만들고 로컬에 미러링' })
+  create(@Body() dto: CreateBookingDto, @CurrentUser() user: AuthUser) {
+    return this.booking.create(dto, user);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: '예약 수정 — 날짜·객실 타입·인원' })
+  update(@Param('id') id: string, @Body() dto: UpdateBookingDto, @CurrentUser() user: AuthUser) {
+    return this.booking.update(id, dto, user);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: '예약 취소' })
+  cancel(@Param('id') id: string, @Body() dto: CancelBookingDto, @CurrentUser() user: AuthUser) {
+    return this.booking.cancel(id, dto, user);
+  }
+
+  // --- 로컬 조회·프론트데스크 -------------------------------------------
   // 모든 조회·조작에 요청자를 함께 넘긴다. 소속이 지정된 직원은 자기 호텔로 고정된다.
   @Get()
   @ApiOperation({ summary: '예약 목록 조회' })
