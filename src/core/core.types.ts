@@ -40,6 +40,8 @@ export interface CoreReservation {
   children?: number;
   totalAmount?: number;
   currency?: string;
+  /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
+  blockCode?: string;
   guest?: {
     profileId?: string;
     firstName?: string;
@@ -110,6 +112,8 @@ export interface CoreCreateReservationInput {
   ratePlanCode?: string;
   adults: number;
   children?: number;
+  /** 단체 블록에서 빼는 예약이면 블록 코드. OPERA 가 픽업으로 잡는다. */
+  blockCode?: string;
   guest: {
     profileId?: string;
     firstName: string;
@@ -125,6 +129,66 @@ export interface CoreUpdateReservationInput {
   ratePlanCode?: string;
   adults?: number;
   children?: number;
+}
+
+// --- 단체 블록 --------------------------------------------------------------
+
+export type CoreBlockStatus = 'Inquiry' | 'Tentative' | 'Definite' | 'Cancelled' | 'Actual';
+
+export interface CoreBlockAllotment {
+  date: string;
+  roomTypeCode: string;
+  blocked: number;
+  pickedUp: number;
+  ratePlanCode?: string;
+  amount?: number;
+}
+
+export interface CoreBlock {
+  blockId: string;
+  code: string;
+  name: string;
+  hotelId: string;
+  status: CoreBlockStatus;
+  startDate: string;
+  endDate: string;
+  cutoffDate?: string;
+  currency?: string;
+  allotments: CoreBlockAllotment[];
+  totalBlocked: number;
+  totalPickedUp: number;
+}
+
+export interface CoreBlockListResponse {
+  items: CoreBlock[];
+  limit: number;
+  offset: number;
+  total?: number;
+}
+
+export interface CoreBlockListParams {
+  hotelId?: string;
+  status?: CoreBlockStatus;
+  startFrom?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface CoreCreateBlockInput {
+  hotelId?: string;
+  code: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  cutoffDate?: string;
+  status?: CoreBlockStatus;
+  allotments: Array<{ roomTypeCode: string; blocked: number; ratePlanCode?: string }>;
+}
+
+export interface CoreUpdateBlockInput {
+  name?: string;
+  status?: CoreBlockStatus;
+  cutoffDate?: string;
 }
 
 export interface CoreAvailabilityParams {

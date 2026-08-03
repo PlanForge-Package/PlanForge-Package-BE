@@ -4,6 +4,10 @@ import { CoreApiError, CoreUnreachableError } from './core.errors';
 import type {
   CoreAvailabilityParams,
   CoreAvailabilityResponse,
+  CoreBlock,
+  CoreBlockListParams,
+  CoreBlockListResponse,
+  CoreCreateBlockInput,
   CoreCreateReservationInput,
   CoreRateParams,
   CoreRateResponse,
@@ -11,6 +15,7 @@ import type {
   CoreReservationListParams,
   CoreReservationListResponse,
   CoreRoomStatus,
+  CoreUpdateBlockInput,
   CoreUpdateReservationInput,
 } from './core.types';
 
@@ -55,7 +60,34 @@ export class CoreClient {
     return this.request<CoreRateResponse>('/v1/rates', { ...params });
   }
 
+  listBlocks(params: CoreBlockListParams = {}): Promise<CoreBlockListResponse> {
+    return this.request<CoreBlockListResponse>('/v1/blocks', { ...params });
+  }
+
+  getBlock(blockId: string): Promise<CoreBlock> {
+    return this.request<CoreBlock>(`/v1/blocks/${encodeURIComponent(blockId)}`);
+  }
+
+  /** 룸리스트 — 이 블록에서 빠져나간 예약. 블록 코드로 거르는 것은 Core 가 한다. */
+  listBlockReservations(blockId: string): Promise<CoreReservationListResponse> {
+    return this.request<CoreReservationListResponse>(
+      `/v1/blocks/${encodeURIComponent(blockId)}/reservations`,
+    );
+  }
+
   // --- 쓰기. OPERA 가 재고·요금·확인 번호를 판단한다 --------------------------
+
+  createBlock(input: CoreCreateBlockInput): Promise<CoreBlock> {
+    return this.request<CoreBlock>('/v1/blocks', undefined, { method: 'POST', json: input });
+  }
+
+  updateBlock(blockId: string, input: CoreUpdateBlockInput): Promise<CoreBlock> {
+    return this.request<CoreBlock>(`/v1/blocks/${encodeURIComponent(blockId)}`, undefined, {
+      method: 'PATCH',
+      json: input,
+    });
+  }
+
 
   createReservation(input: CoreCreateReservationInput): Promise<CoreReservation> {
     return this.request<CoreReservation>('/v1/reservations', undefined, {

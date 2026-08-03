@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreatePropertyDto, UpdatePropertyDto } from './dto/properties.dto';
+import { assertWithinScope } from './property-scope';
 
 @Injectable()
 export class PropertiesService {
@@ -30,6 +31,23 @@ export class PropertiesService {
       throw new NotFoundException(`호텔을 찾을 수 없습니다: ${id}`);
     }
     return property;
+  }
+
+  /**
+   * 호텔의 객실 타입.
+   *
+   * 블록 할당·재고 화면처럼 "이 호텔에 어떤 타입이 있는가" 만 필요한 곳이 많다.
+   * 객실 전체를 받아 중복을 걷어내면 수백 행을 헛되이 실어 나른다.
+   */
+  async listRoomTypes(id: string, user: AuthUser) {
+    await this.findOne(id);
+    assertWithinScope(user, id);
+
+    return this.prisma.roomType.findMany({
+      where: { propertyId: id },
+      select: { id: true, code: true, name: true, maxOccupancy: true },
+      orderBy: { code: 'asc' },
+    });
   }
 
   async create(dto: CreatePropertyDto) {

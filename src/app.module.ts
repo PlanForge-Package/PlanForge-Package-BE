@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
+import { BlocksModule } from './blocks/blocks.module';
 import { CoreModule } from './core/core.module';
 import { FoliosModule } from './folios/folios.module';
 import { HealthModule } from './health/health.module';
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module';
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
     PrismaModule,
     AuthModule,
+    BlocksModule,
     CoreModule,
     HealthModule,
     FoliosModule,

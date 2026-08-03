@@ -72,6 +72,7 @@ model Property {
   reservations      Reservation[]
   users             User[]
   housekeepingTasks HousekeepingTask[]
+  blocks            Block[]
 
   @@map("properties")
 }
@@ -191,6 +192,79 @@ model HousekeepingTask {
 }
 
 // ---------------------------------------------------------------------------
+// 단체 블록 (OPERA Block)
+// ---------------------------------------------------------------------------
+
+/// OPERA 블록 상태. DEFINITE 부터 재고를 실제로 잡는다.
+enum BlockStatus {
+  INQUIRY
+  TENTATIVE
+  DEFINITE
+  CANCELLED
+  ACTUAL
+}
+
+/**
+ * 단체 블록의 로컬 사본.
+ *
+ * 원천은 OPERA 다. 여기 있는 값은 목록·검색을 빠르게 하려고 두는 캐시이고,
+ * 생성·수정은 전부 Core 를 거쳐 OPERA 에 위임한 뒤 **OPERA 가 돌려준 값**으로
+ * 다시 채운다. 우리가 보낸 값을 그대로 적으면 OPERA 가 조정한 결과를 놓친다.
+ */
+model Block {
+  id            String      @id @default(cuid())
+  /// OPERA blockId. 이것이 없으면 위임할 대상을 특정할 수 없다.
+  operaBlockId  String?     @unique
+  propertyId    String
+  /// 예약 시 지정하는 블록 코드
+  code          String
+  name          String
+  status        BlockStatus @default(TENTATIVE)
+  startDate     DateTime    @db.Date
+  endDate       DateTime    @db.Date
+  /// 이 날짜가 지나면 잡아 둔 객실이 일반 재고로 풀린다.
+  cutoffDate    DateTime?   @db.Date
+  currency      String      @default("KRW")
+  /// 합계 스냅샷. 할당을 매번 합산하지 않도록 미러링 시 함께 갱신한다.
+  totalBlocked  Int         @default(0)
+  totalPickedUp Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  property   Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  allotments BlockAllotment[]
+
+  @@unique([propertyId, code])
+  @@index([propertyId, startDate])
+  @@map("blocks")
+}
+
+/**
+ * 일자·객실 타입별 할당.
+ *
+ * roomType 을 FK 가 아니라 코드 문자열로 들고 있는 이유: OPERA 가 우리 쪽에
+ * 아직 동기화되지 않은 객실 타입을 돌려줄 수 있다. FK 로 묶으면 그때 미러링
+ * 전체가 실패해 블록이 화면에서 통째로 사라진다.
+ */
+model BlockAllotment {
+  id           String   @id @default(cuid())
+  blockId      String
+  date         DateTime @db.Date
+  roomTypeCode String
+  /// 잡아 둔 객실 수
+  blocked      Int      @default(0)
+  /// 실제 예약으로 빠져나간 수
+  pickedUp     Int      @default(0)
+  ratePlanCode String?
+  amount       Decimal? @db.Decimal(12, 2)
+
+  block Block @relation(fields: [blockId], references: [id], onDelete: Cascade)
+
+  @@unique([blockId, date, roomTypeCode])
+  @@map("block_allotments")
+}
+
+// ---------------------------------------------------------------------------
 // 프로필 (OPERA Profile)
 // ---------------------------------------------------------------------------
 
@@ -254,6 +328,9 @@ model Reservation {
   children           Int               @default(0)
   /// 배정된 객실 번호. 미배정이면 null.
   assignedRoomNumber String?
+  /// 단체 블록에서 빠져나온 예약이면 그 블록 코드.
+  /// FK 가 아니라 코드인 이유는 블록이 아직 캐시되기 전에 예약이 먼저 들어올 수 있어서다.
+  blockCode          String?
   totalAmount        Decimal?          @db.Decimal(12, 2)
   currency           String            @default("KRW")
   notes              String?
@@ -268,6 +345,7 @@ model Reservation {
 
   @@index([propertyId, arrivalDate])
   @@index([propertyId, status])
+  @@index([propertyId, blockCode])
   @@map("reservations")
 }
 

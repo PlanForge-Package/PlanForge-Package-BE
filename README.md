@@ -85,6 +85,11 @@ CREATE DATABASE planforge OWNER planforge;
 | `GET` | `/api/housekeeping/attendants` | 배정 가능한 직원 |
 | `GET` | `/api/housekeeping/discrepancies` | 객실 상태·재실 불일치 |
 | `GET` | `/api/rooms/summary` | 객실 상태별 집계 |
+| `GET` | `/api/blocks` | 단체 블록 목록 (OPERA 조회 후 미러링) |
+| `GET` | `/api/blocks/:id` | 블록 상세 — 일자·객실 타입별 할당과 픽업 |
+| `GET` | `/api/blocks/:id/reservations` | 룸리스트 — 이 블록에서 빠져나간 예약 |
+| `POST` | `/api/blocks` | 블록 생성 (MANAGER 이상) |
+| `PATCH` | `/api/blocks/:id` | 블록 수정 — 이름·상태·컷오프 (MANAGER 이상) |
 | `POST` | `/api/sync/reservations` | Core 를 통해 OPERA 예약 동기화 |
 | `GET` | `/api/sync/logs` | 동기화 이력 조회 |
 
@@ -141,6 +146,7 @@ OPERA 에 보낼 성질이 아닙니다. `HousekeepingTask` 가 이를 담습니
 | --- | --- | --- |
 | `GET` | `/api/properties` | 접근 가능한 호텔 목록 (전 역할) |
 | `GET` | `/api/properties/:id` | 호텔 단건 |
+| `GET` | `/api/properties/:id/room-types` | 호텔의 객실 타입 목록 |
 | `POST` | `/api/properties` | 호텔 등록 (ADMIN) |
 | `PATCH` | `/api/properties/:id` | 호텔 수정 · 운영 중단 (ADMIN) |
 

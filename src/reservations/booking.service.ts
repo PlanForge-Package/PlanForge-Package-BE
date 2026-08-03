@@ -79,6 +79,7 @@ export class BookingService {
         ratePlanCode: dto.ratePlanCode,
         adults: dto.adults ?? 1,
         children: dto.children ?? 0,
+        blockCode: dto.blockCode,
         guest: dto.guest,
       });
 
@@ -162,6 +163,7 @@ export class BookingService {
       adults: source.adults ?? 1,
       children: source.children ?? 0,
       assignedRoomNumber: source.roomNumber ?? null,
+      blockCode: source.blockCode ?? null,
       totalAmount: source.totalAmount === undefined ? null : new Prisma.Decimal(source.totalAmount),
       currency: source.currency ?? property.currency,
       ...(cancellationNote ? { notes: cancellationNote } : {}),

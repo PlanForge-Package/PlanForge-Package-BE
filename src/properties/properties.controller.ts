@@ -30,6 +30,12 @@ export class PropertiesController {
     return property;
   }
 
+  @Get(':id/room-types')
+  @ApiOperation({ summary: '호텔의 객실 타입 목록' })
+  roomTypes(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.properties.listRoomTypes(id, user);
+  }
+
   @Post()
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: '호텔 등록' })

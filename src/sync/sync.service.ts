@@ -153,6 +153,7 @@ export class SyncService {
       adults: source.adults ?? 1,
       children: source.children ?? 0,
       assignedRoomNumber: source.roomNumber ?? null,
+      blockCode: source.blockCode ?? null,
     };
 
     const existing = await this.prisma.reservation.findUnique({

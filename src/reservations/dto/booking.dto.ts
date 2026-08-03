@@ -77,6 +77,15 @@ export class CreateBookingDto extends CheckAvailabilityDto {
   @IsString()
   ratePlanCode?: string;
 
+  @ApiPropertyOptional({
+    description: '단체 블록에서 빼는 예약이면 블록 코드. OPERA 가 픽업으로 잡습니다.',
+    example: 'SPGRP',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  blockCode?: string;
+
   /**
    * `@ValidateNested()` 가 없으면 전역 ValidationPipe 의 whitelist 가 중첩 객체를
    * "검증 대상이 아닌 속성" 으로 보고 통째로 걷어낸다. forbidNonWhitelisted 까지
