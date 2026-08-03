@@ -17,17 +17,37 @@ Oracle OPERA(OHIP) 기반 호텔 관리 플랫폼 **PlanForge** 의 백엔드입
 
 - Node.js 20.11 이상
 - pnpm 9
-- PostgreSQL 16 (`docker compose up -d` 로 기동 가능)
+- PostgreSQL 16
 
 ## 시작하기
 
 ```bash
 pnpm install
 cp .env.example .env
-docker compose up -d          # PostgreSQL
-pnpm prisma:migrate           # 최초 마이그레이션 생성/적용
+
+# PostgreSQL — 둘 중 하나
+docker compose up -d                                   # Docker 를 쓰는 경우
+winget install PostgreSQL.PostgreSQL.16                # Windows 에 직접 설치하는 경우
+
+pnpm prisma:deploy            # 마이그레이션 적용
+pnpm prisma:seed              # 개발용 시드 데이터 (선택)
 pnpm start:dev
 ```
+
+PostgreSQL 을 직접 설치했다면 역할과 데이터베이스를 먼저 만듭니다.
+
+```sql
+CREATE ROLE planforge LOGIN PASSWORD 'planforge' CREATEDB;
+CREATE DATABASE planforge OWNER planforge;
+```
+
+### 시드 데이터
+
+`pnpm prisma:seed` 는 호텔 1곳, 객실 8실, 게스트 6명, 예약 6건을 넣습니다.
+도착·출발일은 실행 시점 기준 상대 날짜라 언제 돌려도 "오늘 도착", "재실" 같은
+상태가 유지됩니다. 재실 예약에는 잔액이 남은 폴리오가 붙어 있어 체크아웃 차단
+로직을 바로 시험할 수 있습니다. 모두 upsert 라 여러 번 돌려도 결과가 같으며,
+`NODE_ENV=production` 이면 실행을 거부합니다.
 
 - API: `http://localhost:3001/api`
 - Swagger: `http://localhost:3001/docs`

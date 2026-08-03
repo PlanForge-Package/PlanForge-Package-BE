@@ -7,7 +7,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     // 타입 인지 규칙은 tsconfig 가 포함하는 소스에만 적용한다.
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'prisma/**/*.ts'],
     languageOptions: {
       parserOptions: {
         projectService: true,
