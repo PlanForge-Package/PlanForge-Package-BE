@@ -90,6 +90,7 @@ jobs:
           context: .
           push: false
           load: true
-          tags: ${{ github.event.repository.name }}:ci
+          # Docker 태그는 소문자만 허용한다. 리포 이름에는 대문자가 있어 그대로 쓸 수 없다.
+          tags: planforge-be:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
