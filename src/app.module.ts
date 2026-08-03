@@ -10,6 +10,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { SyncModule } from './sync/sync.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { SyncModule } from './sync/sync.module';
     ReservationsModule,
     RoomsModule,
     SyncModule,
+    UsersModule,
   ],
   providers: [
     // 로그인은 @Public() 이라 인증 가드가 즉시 통과시키므로, 비밀번호 검증(bcrypt)에
