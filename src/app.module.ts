@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from './auth/auth.module';
 import { CoreModule } from './core/core.module';
 import { FoliosModule } from './folios/folios.module';
 import { HealthModule } from './health/health.module';
@@ -12,6 +13,7 @@ import { SyncModule } from './sync/sync.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env.local', '.env'] }),
     PrismaModule,
+    AuthModule,
     CoreModule,
     HealthModule,
     FoliosModule,

@@ -31,6 +31,9 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://planforge:planforge@localhost:5432/planforge_test?schema=public
+      # AuthModule 은 32자 미만이면 기동을 거부한다. CI 전용 더미 값이다.
+      JWT_SECRET: ci-only-dummy-secret-value-not-used-in-production-0123456789
+      JWT_EXPIRES_IN: 8h
 
     steps:
       - uses: actions/checkout@v4

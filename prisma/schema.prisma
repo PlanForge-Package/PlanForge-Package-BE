@@ -14,6 +14,42 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// 계정 / 권한
+// ---------------------------------------------------------------------------
+
+/// 업무 역할. 호텔 조직도를 그대로 따른다.
+enum UserRole {
+  /// 계정 관리까지 포함한 전체 권한
+  ADMIN
+  /// 운영 전반. 계정 관리는 제외
+  MANAGER
+  /// 예약·체크인/아웃·폴리오
+  FRONT_DESK
+  /// 객실 상태 변경만
+  HOUSEKEEPING
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  /// bcrypt 해시. 평문은 어디에도 저장하지 않는다.
+  passwordHash String
+  name         String
+  role         UserRole @default(FRONT_DESK)
+  /// 소속 호텔. null 이면 전 호텔 접근(본사 계정).
+  propertyId   String?
+  active       Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([propertyId])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
 // 조직 / 자산
 // ---------------------------------------------------------------------------
 
@@ -33,6 +69,7 @@ model Property {
   rooms        Room[]
   ratePlans    RatePlan[]
   reservations Reservation[]
+  users        User[]
 
   @@map("properties")
 }

@@ -1,9 +1,14 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../auth/auth.constants';
 import { CreatePostingDto, OpenFolioDto } from './dto/folios.dto';
 import { FoliosService } from './folios.service';
 
 @ApiTags('folios')
+@ApiBearerAuth()
+// 회계 거래는 프론트데스크와 매니저만 다룬다.
+@Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
 @Controller('reservations/:reservationId/folios')
 export class FoliosController {
   constructor(private readonly folios: FoliosService) {}

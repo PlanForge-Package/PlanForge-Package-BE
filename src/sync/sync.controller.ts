@@ -1,11 +1,15 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { SyncStatus } from '@prisma/client';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { SyncStatus, UserRole } from '@prisma/client';
+import { Roles } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { SyncReservationsDto } from './dto/sync-reservations.dto';
 import { SyncService, type SyncReservationsResult } from './sync.service';
 
 @ApiTags('sync')
+@ApiBearerAuth()
+// OPERA 동기화는 대량 쓰기라 매니저 이상만 돌린다.
+@Roles(UserRole.MANAGER)
 @Controller('sync')
 export class SyncController {
   constructor(

@@ -14,7 +14,9 @@ import {
   ProfileType,
   ReservationStatus,
   RoomStatus,
+  UserRole,
 } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -50,6 +52,14 @@ const ROOMS = [
   { number: '1203', floor: '12', type: 'DLXK', status: RoomStatus.INSPECTED },
   { number: '1501', floor: '15', type: 'SUIT', status: RoomStatus.CLEAN },
   { number: '1502', floor: '15', type: 'SUIT', status: RoomStatus.OUT_OF_ORDER },
+];
+
+/** 역할별로 하나씩. 권한 경계를 화면에서 바로 확인할 수 있게 한다. */
+const USERS = [
+  { email: 'admin@planforge.local', name: '관리자', role: UserRole.ADMIN },
+  { email: 'manager@planforge.local', name: '지배인', role: UserRole.MANAGER },
+  { email: 'frontdesk@planforge.local', name: '프론트데스크', role: UserRole.FRONT_DESK },
+  { email: 'housekeeping@planforge.local', name: '하우스키핑', role: UserRole.HOUSEKEEPING },
 ];
 
 const GUESTS = [
@@ -154,6 +164,22 @@ async function main(): Promise<void> {
       address: '서울특별시 중구',
     },
   });
+
+  // 계정. 비밀번호는 환경변수로 받아 소스에 평문을 남기지 않는다.
+  const seedPassword = process.env.SEED_PASSWORD ?? 'planforge';
+  if (seedPassword.length < 8) {
+    throw new Error('SEED_PASSWORD 는 8자 이상이어야 합니다.');
+  }
+  const passwordHash = await bcrypt.hash(seedPassword, 10);
+
+  for (const user of USERS) {
+    await prisma.user.upsert({
+      where: { email: user.email },
+      // 비밀번호도 매번 되돌린다 — 개발 중 바꿔 놓고 잊어 로그인하지 못하는 일을 막는다.
+      update: { name: user.name, role: user.role, passwordHash, active: true },
+      create: { ...user, passwordHash, propertyId: property.id },
+    });
+  }
 
   const roomTypes = new Map<string, string>();
   for (const rt of ROOM_TYPES) {
@@ -306,11 +332,16 @@ async function main(): Promise<void> {
 
   const counts = {
     properties: await prisma.property.count(),
+    users: await prisma.user.count(),
     rooms: await prisma.room.count(),
     profiles: await prisma.profile.count(),
     reservations: await prisma.reservation.count(),
   };
   console.log('시드 완료:', counts);
+  console.log(`계정 비밀번호: ${seedPassword} (SEED_PASSWORD 로 변경 가능)`);
+  for (const user of USERS) {
+    console.log(`  ${user.role.padEnd(12)} ${user.email}`);
+  }
 }
 
 main()

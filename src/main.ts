@@ -17,7 +17,7 @@ async function bootstrap(): Promise<void> {
     .setTitle('PlanForge BE')
     .setDescription('호텔 관리 플랫폼 업무 로직 API')
     .setVersion('0.0.0')
-    .addBearerAuth()
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
 

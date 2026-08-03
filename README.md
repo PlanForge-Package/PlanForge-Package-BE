@@ -60,7 +60,9 @@ CREATE DATABASE planforge OWNER planforge;
 
 | 메서드 | 경로 | 설명 |
 | --- | --- | --- |
-| `GET` | `/api/health` | 서비스 및 DB 상태 |
+| `POST` | `/api/auth/login` | 로그인 후 액세스 토큰 발급 (공개) |
+| `GET` | `/api/auth/me` | 현재 계정 조회 |
+| `GET` | `/api/health` | 서비스 및 DB 상태 (공개) |
 | `GET` | `/api/reservations` | 예약 목록 (상태·도착일·확인번호/이름 검색) |
 | `GET` | `/api/reservations/summary` | 당일 도착·출발·재실 요약 |
 | `GET` | `/api/reservations/:id` | 예약 단건 (폴리오·거래 포함) |
@@ -78,6 +80,31 @@ CREATE DATABASE planforge OWNER planforge;
 체크인·체크아웃은 객실 배정·예약 상태·폴리오가 함께 성립해야 하므로 한 트랜잭션으로
 처리합니다. 재실 중인 객실 중복 배정, 판매 불가 객실 배정, 미결제 잔액이 남은 상태의
 체크아웃은 거절합니다.
+
+### 인증과 권한
+
+`@Public()` 이 붙지 않은 **모든** 라우트가 유효한 Bearer 토큰을 요구합니다. 화이트리스트가
+아니라 기본을 "보호됨" 으로 둔 이유는, 새 컨트롤러를 추가할 때 보호를 잊는 쪽이 훨씬
+위험하기 때문입니다. 공개 라우트는 `/api/auth/login` 과 `/api/health` 뿐입니다.
+
+| 역할 | 예약·폴리오 | 객실 조회 | 객실 상태 변경 | OPERA 동기화 | 계정 관리 |
+| --- | --- | --- | --- | --- | --- |
+| `ADMIN` | O | O | O | O | O |
+| `MANAGER` | O | O | O | O | – |
+| `FRONT_DESK` | O | O | O | – | – |
+| `HOUSEKEEPING` | – | O | O | – | – |
+
+`ADMIN` 은 `@Roles()` 목록에 없어도 항상 통과합니다 — 권한을 늘릴 때마다 목록에서
+`ADMIN` 을 빠뜨려 스스로 잠기는 일을 막기 위해서입니다.
+
+로그인 실패는 원인(없는 계정·틀린 비밀번호·비활성 계정)과 무관하게 같은 문구를
+돌려주고, 없는 계정에도 해싱 비용을 치릅니다. 응답 내용이나 시간으로 계정 존재
+여부가 새어 나가지 않게 하기 위해서입니다.
+
+`GET /api/auth/me` 는 매번 DB 를 확인합니다. 토큰은 8시간 유효하지만 그 사이 계정이
+비활성화될 수 있어, 토큰만 믿으면 해고된 직원이 남은 시간 동안 계속 접근합니다.
+
+`JWT_SECRET` 이 없거나 32자 미만이면 서버가 기동하지 않습니다.
 
 ### 폴리오 금액 규칙
 
@@ -137,6 +164,9 @@ PlanForge 자체 ID 를 1차 키로 두고, OPERA 식별자는 `operaHotelId`, `
 | `CORE_BASE_URL` | Core API 서버 주소 |
 | `CORE_API_KEY` | Core 호출용 API 키 (`x-api-key`) |
 | `CORE_REQUEST_TIMEOUT_MS` | Core 호출 타임아웃 (기본 `15000`) |
+| `JWT_SECRET` | 토큰 서명 키. 32자 이상 필수 (`openssl rand -base64 48`) |
+| `JWT_EXPIRES_IN` | 토큰 수명 (기본 `8h` — 한 근무 교대) |
+| `SEED_PASSWORD` | 시드 계정 비밀번호 (개발용, 기본 `planforge`) |
 
 ## 스크립트
 
