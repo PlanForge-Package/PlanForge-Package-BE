@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CoreModule } from './core/core.module';
+import { FoliosModule } from './folios/folios.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReservationsModule } from './reservations/reservations.module';
@@ -13,6 +14,7 @@ import { SyncModule } from './sync/sync.module';
     PrismaModule,
     CoreModule,
     HealthModule,
+    FoliosModule,
     ReservationsModule,
     RoomsModule,
     SyncModule,

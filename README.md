@@ -63,6 +63,9 @@ CREATE DATABASE planforge OWNER planforge;
 | `GET` | `/api/reservations/:id` | 예약 단건 (폴리오·거래 포함) |
 | `POST` | `/api/reservations/:id/check-in` | 체크인 — 객실 배정 및 폴리오 개설 |
 | `POST` | `/api/reservations/:id/check-out` | 체크아웃 — 폴리오 마감 및 객실 반납 |
+| `GET` | `/api/reservations/:id/folios` | 폴리오와 거래 내역 조회 |
+| `POST` | `/api/reservations/:id/folios` | 폴리오 윈도 추가 개설 (분할 정산) |
+| `POST` | `/api/reservations/:id/folios/:window/postings` | 청구·결제 등록 후 잔액 재계산 |
 | `GET` | `/api/rooms` | 객실 목록 |
 | `GET` | `/api/rooms/summary` | 객실 상태별 집계 |
 | `PATCH` | `/api/rooms/:id/status` | 하우스키핑 상태 변경 |
@@ -72,6 +75,33 @@ CREATE DATABASE planforge OWNER planforge;
 체크인·체크아웃은 객실 배정·예약 상태·폴리오가 함께 성립해야 하므로 한 트랜잭션으로
 처리합니다. 재실 중인 객실 중복 배정, 판매 불가 객실 배정, 미결제 잔액이 남은 상태의
 체크아웃은 거절합니다.
+
+### 폴리오 금액 규칙
+
+`amount` 는 **항상 양수**로 보냅니다. 잔액에 더할지 뺄지는 `type` 이 정합니다.
+
+| type | 잔액 방향 |
+| --- | --- |
+| `CHARGE`, `TAX` | 증가 |
+| `PAYMENT` | 감소 |
+| `ADJUSTMENT` | 기본 증가, `negative: true` 면 감소 |
+
+부호를 호출자가 정하게 하면 결제를 양수로 보내 잔액이 되레 늘어나는 사고가 나기
+쉽기 때문입니다. 잔액은 거래를 더해 가는 대신 **매번 거래 합계로 다시 계산**합니다 —
+증분 방식은 한 번의 실패가 영구적인 잔액 오차로 남습니다.
+
+마감된 폴리오에는 거래를 등록할 수 없습니다. 마감 후 거래가 붙으면 체크아웃 시점의
+잔액 0 검증이 무의미해지기 때문입니다.
+
+```bash
+# 체크인 → 청구 → 결제 → 체크아웃
+curl -X POST .../reservations/$ID/check-in       -d '{"roomNumber":"1501"}'
+curl -X POST .../reservations/$ID/folios/1/postings \
+  -d '{"type":"CHARGE","transactionCode":"1000","description":"객실료","amount":240000}'
+curl -X POST .../reservations/$ID/folios/1/postings \
+  -d '{"type":"PAYMENT","transactionCode":"5000","description":"카드 결제","amount":240000}'
+curl -X POST .../reservations/$ID/check-out      -d '{}'
+```
 
 ## Core 연동
 
