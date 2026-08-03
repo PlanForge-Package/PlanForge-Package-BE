@@ -78,7 +78,11 @@ export class BlocksService {
     this.assertDateRange(dto.startDate, dto.endDate, dto.cutoffDate);
 
     const code = dto.code.toUpperCase();
-    const log = await this.startLog(null, { action: 'create', code, hotelId: property.operaHotelId });
+    const log = await this.startLog(null, {
+      action: 'create',
+      code,
+      hotelId: property.operaHotelId,
+    });
 
     try {
       const created = await this.core.createBlock({
@@ -188,7 +192,10 @@ export class BlocksService {
   }
 
   private async loadLinked(id: string, user: AuthUser) {
-    const block = await this.prisma.block.findUnique({ where: { id }, include: { property: true } });
+    const block = await this.prisma.block.findUnique({
+      where: { id },
+      include: { property: true },
+    });
     if (!block) {
       throw new NotFoundException(`블록을 찾을 수 없습니다: ${id}`);
     }

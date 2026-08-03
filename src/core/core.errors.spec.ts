@@ -21,7 +21,9 @@ describe('CoreApiError — 상태 전달', () => {
 
   // 외부 장애는 재시도해 볼 문제라 502 로 구분되어야 한다.
   it('500 은 502 로 바꾼다', () => {
-    const error = new CoreApiError(500, 'Core 호출이 500 로 실패했습니다', { message: '내부 오류' });
+    const error = new CoreApiError(500, 'Core 호출이 500 로 실패했습니다', {
+      message: '내부 오류',
+    });
     expect(error.getStatus()).toBe(HttpStatus.BAD_GATEWAY);
     expect(error.getResponse()).toEqual(
       expect.objectContaining({ message: 'Core 호출이 500 로 실패했습니다' }),

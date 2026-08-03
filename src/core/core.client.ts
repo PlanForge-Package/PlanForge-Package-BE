@@ -88,7 +88,6 @@ export class CoreClient {
     });
   }
 
-
   createReservation(input: CoreCreateReservationInput): Promise<CoreReservation> {
     return this.request<CoreReservation>('/v1/reservations', undefined, {
       method: 'POST',
