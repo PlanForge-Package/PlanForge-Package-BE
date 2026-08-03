@@ -181,7 +181,9 @@ async function main(): Promise<void> {
 
     await prisma.room.upsert({
       where: { propertyId_number: { propertyId: property.id, number: room.number } },
-      update: { status: room.status, floor: room.floor, roomTypeId },
+      // 점유는 아래에서 재실 예약을 보고 다시 세운다. 여기서 함께 초기화하지 않으면
+      // 이전 실행에서 체크인한 객실이 계속 점유 상태로 남아 다음 체크인이 막힌다.
+      update: { status: room.status, floor: room.floor, roomTypeId, occupied: false },
       create: {
         propertyId: property.id,
         roomTypeId,
@@ -191,6 +193,12 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  // 이 호텔의 나머지 객실(시드 목록 밖에서 만들어진 것 포함)도 점유를 푼다.
+  await prisma.room.updateMany({
+    where: { propertyId: property.id },
+    data: { occupied: false },
+  });
 
   const profiles = new Map<string, string>();
   for (const guest of GUESTS) {
@@ -246,47 +254,53 @@ async function main(): Promise<void> {
         data: { occupied: true },
       });
 
+      // 마감 상태로 남아 있으면 다시 열어 준다 — 이전 실행에서 체크아웃까지
+      // 시험했다면 폴리오가 CLOSED 로 남아 거래 등록이 막힌다.
       const folio = await prisma.folio.upsert({
         where: { reservationId_window: { reservationId: reservation.id, window: 1 } },
-        update: {},
+        update: { status: FolioStatus.OPEN },
         create: { reservationId: reservation.id, window: 1, currency: 'KRW' },
       });
 
-      // 이미 거래가 있으면 다시 넣지 않는다 — 시드를 여러 번 돌려도 잔액이 불어나지 않게.
-      const existing = await prisma.posting.count({ where: { folioId: folio.id } });
-      if (existing === 0) {
-        await prisma.posting.createMany({
-          data: [
-            {
-              folioId: folio.id,
-              type: PostingType.CHARGE,
-              transactionCode: '1000',
-              description: '객실료',
-              amount: '400000',
-            },
-            {
-              folioId: folio.id,
-              type: PostingType.TAX,
-              transactionCode: '9000',
-              description: '부가세',
-              amount: '40000',
-            },
-            {
-              folioId: folio.id,
-              type: PostingType.PAYMENT,
-              transactionCode: '5000',
-              description: '카드 선결제',
-              amount: '-340000',
-            },
-          ],
-        });
+      // 거래는 매번 갈아 끼운다. 남겨 두고 건너뛰면 이전 실행에서 등록한 결제가
+      // 그대로 남아 잔액이 0 이 되고, 체크아웃 차단을 시험할 수 없다.
+      await prisma.posting.deleteMany({ where: { folioId: folio.id } });
+      await prisma.posting.createMany({
+        data: [
+          {
+            folioId: folio.id,
+            type: PostingType.CHARGE,
+            transactionCode: '1000',
+            description: '객실료',
+            amount: '400000',
+          },
+          {
+            folioId: folio.id,
+            type: PostingType.TAX,
+            transactionCode: '9000',
+            description: '부가세',
+            amount: '40000',
+          },
+          {
+            folioId: folio.id,
+            type: PostingType.PAYMENT,
+            transactionCode: '5000',
+            description: '카드 선결제',
+            amount: '-340000',
+          },
+        ],
+      });
 
-        // 잔액 = 청구 - 결제. 체크아웃 차단 로직을 시험할 수 있도록 일부러 남겨 둔다.
-        await prisma.folio.update({
-          where: { id: folio.id },
-          data: { balance: '100000', status: FolioStatus.OPEN },
-        });
-      }
+      // 잔액은 거래 합계로 세운다 (BE 와 같은 규칙). 100,000 이 남아 체크아웃
+      // 차단 로직을 바로 시험할 수 있다.
+      const totals = await prisma.posting.aggregate({
+        where: { folioId: folio.id },
+        _sum: { amount: true },
+      });
+      await prisma.folio.update({
+        where: { id: folio.id },
+        data: { balance: totals._sum.amount ?? 0 },
+      });
     }
   }
 

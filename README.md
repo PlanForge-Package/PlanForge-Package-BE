@@ -46,8 +46,11 @@ CREATE DATABASE planforge OWNER planforge;
 `pnpm prisma:seed` 는 호텔 1곳, 객실 8실, 게스트 6명, 예약 6건을 넣습니다.
 도착·출발일은 실행 시점 기준 상대 날짜라 언제 돌려도 "오늘 도착", "재실" 같은
 상태가 유지됩니다. 재실 예약에는 잔액이 남은 폴리오가 붙어 있어 체크아웃 차단
-로직을 바로 시험할 수 있습니다. 모두 upsert 라 여러 번 돌려도 결과가 같으며,
-`NODE_ENV=production` 이면 실행을 거부합니다.
+로직을 바로 시험할 수 있습니다. `NODE_ENV=production` 이면 실행을 거부합니다.
+
+시드는 자기가 만든 데이터에 한해 멱등합니다 — 객실 점유와 폴리오 상태·거래를
+매번 초기화하므로 체크인·체크아웃까지 시험한 뒤 다시 돌려도 같은 출발점이 됩니다.
+시드 밖에서 생긴 데이터까지 지우려면 `pnpm exec prisma migrate reset` 을 씁니다.
 
 - API: `http://localhost:3001/api`
 - Swagger: `http://localhost:3001/docs`
