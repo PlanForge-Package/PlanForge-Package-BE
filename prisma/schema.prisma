@@ -46,6 +46,7 @@ model User {
   property          Property?          @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   housekeepingTasks HousekeepingTask[]
   issuedRoomKeys    RoomKey[]
+  payments          Payment[]
 
   @@index([propertyId])
   @@map("users")
@@ -427,6 +428,7 @@ model Folio {
 
   reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   postings    Posting[]
+  payments    Payment[]
 
   @@unique([reservationId, window])
   @@map("folios")
@@ -466,6 +468,75 @@ model PosOutlet {
   @@unique([propertyId, code])
   @@index([apiKeyPrefix])
   @@map("pos_outlets")
+}
+
+enum PaymentMethod {
+  CARD
+  CASH
+  TRANSFER
+}
+
+enum PaymentStatus {
+  /// 승인만 받았다. 한도는 잡혔지만 돈은 오지 않았다.
+  AUTHORIZED
+  /// 매입까지 끝났다. 이때 폴리오에 결제가 올라간다.
+  CAPTURED
+  /// 매입 전에 승인을 취소했다.
+  VOIDED
+  /// 매입 후 되돌렸다. 부분 환불이면 금액이 남아 있을 수 있다.
+  REFUNDED
+  FAILED
+}
+
+/**
+ * 결제.
+ *
+ * **카드 번호와 CVV 는 어디에도 저장하지 않는다.** 마스킹된 뒷자리와 PG 가 준
+ * 거래 식별자만 남긴다. 저장하는 순간 이 시스템 전체가 카드 정보 보관 설비가
+ * 되고, 유출 시 책임 범위가 달라진다.
+ */
+model Payment {
+  id      String @id @default(cuid())
+  folioId String
+
+  method PaymentMethod
+  status PaymentStatus @default(AUTHORIZED)
+  amount Decimal       @db.Decimal(12, 2)
+  /// 환불된 누적 금액. 부분 환불을 여러 번 받을 수 있다.
+  refundedAmount Decimal @default(0) @db.Decimal(12, 2)
+  currency       String  @default("KRW")
+
+  /// PG 의 거래 식별자. 매입·취소·환불을 걸 때 이 값으로 지정한다.
+  vendorTxnId    String?
+  /// 승인 번호. 카드사에 문의할 때 쓴다.
+  approvalNumber String?
+  /// 마스킹된 카드 번호 — 뒷 네 자리만. 전체 번호는 저장하지 않는다.
+  maskedCard     String?
+  cardBrand      String?
+
+  /**
+   * 요청 멱등키.
+   *
+   * 결제 요청이 재전송되면 같은 카드로 두 번 긁힌다. 손님 돈이 두 번 나가는
+   * 일은 그 무엇보다 되돌리기 어렵다.
+   */
+  idempotencyKey String @unique
+
+  failureReason String?
+  authorizedAt  DateTime  @default(now())
+  capturedAt    DateTime?
+  voidedAt      DateTime?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  folio     Folio     @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  postings  Posting[]
+
+  @@index([folioId, status])
+  @@map("payments")
 }
 
 enum RoomKeyStatus {
@@ -534,7 +605,9 @@ model Posting {
   createdAt       DateTime    @default(now())
 
   /// 외부 POS 가 단 요금이면 그 아웃렛. 프런트가 직접 올린 것은 null.
-  outletId  String?
+  outletId String?
+  /// PG 결제가 만든 포스팅이면 그 결제. 대사할 때 쓴다.
+  paymentId String?
   /**
    * POS 전표 번호.
    *
@@ -545,8 +618,9 @@ model Posting {
   /// 취소된 포스팅이면 그 취소를 만든 조정 포스팅. 원본은 지우지 않는다.
   voidedById String? @unique
 
-  folio  Folio      @relation(fields: [folioId], references: [id], onDelete: Cascade)
-  outlet PosOutlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  folio   Folio      @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  outlet  PosOutlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  payment Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
   /// 이 포스팅을 취소한 조정. 값이 있으면 이미 취소된 것이다.
   voidedBy Posting? @relation("PostingVoid", fields: [voidedById], references: [id], onDelete: SetNull)
