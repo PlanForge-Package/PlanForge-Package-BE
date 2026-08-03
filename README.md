@@ -90,12 +90,24 @@ CREATE DATABASE planforge OWNER planforge;
 | `GET` | `/api/blocks/:id/reservations` | 룸리스트 — 이 블록에서 빠져나간 예약 |
 | `POST` | `/api/blocks` | 블록 생성 (MANAGER 이상) |
 | `PATCH` | `/api/blocks/:id` | 블록 수정 — 이름·상태·컷오프 (MANAGER 이상) |
+| `GET` | `/api/night-audit` | 야간 감사 점검표 — 마감을 막는 항목 |
+| `POST` | `/api/night-audit/reservations/:id/no-show` | 노쇼 처리 (OPERA 위임) |
 | `POST` | `/api/sync/reservations` | Core 를 통해 OPERA 예약 동기화 |
 | `GET` | `/api/sync/logs` | 동기화 이력 조회 |
 
 체크인·체크아웃은 객실 배정·예약 상태·폴리오가 함께 성립해야 하므로 한 트랜잭션으로
 처리합니다. 재실 중인 객실 중복 배정, 판매 불가 객실 배정, 미결제 잔액이 남은 상태의
 체크아웃은 거절합니다.
+
+### 야간 감사
+
+마감 자체는 OPERA 가 돌립니다 — 영업일을 넘기고 룸·세금을 자동 포스팅하는 것은 PMS 의
+일이고, 흉내 내면 두 시스템의 매출이 갈립니다. `/api/night-audit` 이 하는 일은 "지금
+마감하면 무엇이 잘못 남는가" 를 보여 주는 것입니다: 미도착·미체크아웃·객실 미배정·잔액이
+남은 폴리오·객실 상태 불일치.
+
+영업일은 Core 를 통해 OPERA 에서 읽습니다. 닿지 못하면 달력 날짜로 대신하되 그 사실을
+응답에 실어 보냅니다 — 잘못된 날짜로 마감 판단을 조용히 내리면 매출이 하루 밀려 붙습니다.
 
 ### 인증과 권한
 

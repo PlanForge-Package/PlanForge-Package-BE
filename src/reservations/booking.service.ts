@@ -133,6 +133,32 @@ export class BookingService {
     }
   }
 
+  /**
+   * 노쇼 처리.
+   *
+   * 취소와 같은 상태 전이지만 회계상 의미가 다르다 — 노쇼는 수수료를 청구할 수
+   * 있고 다음 시즌 오버부킹 예측에도 쓰인다. 그래서 취소로 뭉뚱그리지 않는다.
+   * 도착일이 지났는지, 이미 들어온 손님은 아닌지는 OPERA 가 판단한다.
+   */
+  async noShow(id: string, reason: string | undefined, user: AuthUser): Promise<Reservation> {
+    const { reservation, property } = await this.loadLinked(id, user);
+
+    const log = await this.startLog('Reservation', reservation.operaReservationId, {
+      action: 'no-show',
+      reason,
+    });
+
+    try {
+      const result = await this.core.noShowReservation(reservation.operaReservationId!, reason);
+      const mirrored = await this.mirror(property, result, reason);
+      await this.finishLog(log.id, SyncStatus.SUCCESS, result.reservationId);
+      return mirrored;
+    } catch (error) {
+      await this.finishLog(log.id, SyncStatus.FAILED, reservation.operaReservationId, error);
+      throw error;
+    }
+  }
+
   // ---------------------------------------------------------------------------
 
   /**

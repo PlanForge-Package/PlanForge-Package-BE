@@ -7,6 +7,7 @@ import type {
   CoreBlock,
   CoreBlockListParams,
   CoreBlockListResponse,
+  CoreBusinessDate,
   CoreCreateBlockInput,
   CoreCreateReservationInput,
   CoreRateParams,
@@ -58,6 +59,10 @@ export class CoreClient {
 
   getRates(params: CoreRateParams): Promise<CoreRateResponse> {
     return this.request<CoreRateResponse>('/v1/rates', { ...params });
+  }
+
+  getBusinessDate(hotelId?: string): Promise<CoreBusinessDate> {
+    return this.request<CoreBusinessDate>('/v1/business-date', { hotelId });
   }
 
   listBlocks(params: CoreBlockListParams = {}): Promise<CoreBlockListResponse> {
@@ -114,6 +119,14 @@ export class CoreClient {
       `/v1/housekeeping/rooms/${encodeURIComponent(roomNumber)}/status`,
       undefined,
       { method: 'PUT', json: input },
+    );
+  }
+
+  noShowReservation(reservationId: string, reason?: string): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/no-show`,
+      undefined,
+      { method: 'POST', json: reason ? { reason } : {} },
     );
   }
 

@@ -8,6 +8,7 @@ import { CoreModule } from './core/core.module';
 import { FoliosModule } from './folios/folios.module';
 import { HealthModule } from './health/health.module';
 import { HousekeepingModule } from './housekeeping/housekeeping.module';
+import { NightAuditModule } from './night-audit/night-audit.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PropertiesModule } from './properties/properties.module';
 import { ReservationsModule } from './reservations/reservations.module';
@@ -27,6 +28,7 @@ import { UsersModule } from './users/users.module';
     HealthModule,
     FoliosModule,
     HousekeepingModule,
+    NightAuditModule,
     PropertiesModule,
     ReservationsModule,
     RoomsModule,

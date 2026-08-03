@@ -131,6 +131,18 @@ export interface CoreUpdateReservationInput {
   children?: number;
 }
 
+/**
+ * 호텔의 영업일.
+ *
+ * 달력 날짜와 다르다. 야간 감사를 돌리기 전까지는 자정을 넘겨도 어제가 영업일로
+ * 남고, 매출·점유율이 어느 날짜에 붙는지가 그 값으로 정해진다.
+ */
+export interface CoreBusinessDate {
+  hotelId: string;
+  businessDate: string;
+  calendarDate: string;
+}
+
 // --- 단체 블록 --------------------------------------------------------------
 
 export type CoreBlockStatus = 'Inquiry' | 'Tentative' | 'Definite' | 'Cancelled' | 'Actual';
