@@ -411,6 +411,13 @@ model Reservation {
   children           Int               @default(0)
   /// 배정된 객실 번호. 미배정이면 null.
   assignedRoomNumber String?
+  /**
+   * 객실을 함께 쓰는 예약들의 묶음.
+   *
+   * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 예약은 둘이지만 객실은
+   * 하나이므로 재고도 하나만 차지한다. OPERA 가 부여한 값을 그대로 옮겨 적는다.
+   */
+  shareGroupId       String?
   /// 단체 블록에서 빠져나온 예약이면 그 블록 코드.
   /// FK 가 아니라 코드인 이유는 블록이 아직 캐시되기 전에 예약이 먼저 들어올 수 있어서다.
   blockCode          String?

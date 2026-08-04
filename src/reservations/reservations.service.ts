@@ -159,8 +159,28 @@ export class ReservationsService {
     if (!room) {
       throw new NotFoundException(`객실을 찾을 수 없습니다: ${roomNumber}`);
     }
+    /*
+     * 이미 사용 중인 방에는 넣지 않는다.
+     *
+     * 객실을 함께 쓰기로 한 예약은 예외다 — 두 손님이 한 방을 쓰되 계산만
+     * 따로 하는 편성이 공유다. OPERA 도 같은 규칙으로 판단한다.
+     */
     if (room.occupied && reservation.assignedRoomNumber !== roomNumber) {
-      throw new BadRequestException(`객실 ${roomNumber} 은 이미 사용 중입니다.`);
+      const sharing = reservation.shareGroupId
+        ? await this.prisma.reservation.findFirst({
+            where: {
+              propertyId: reservation.propertyId,
+              shareGroupId: reservation.shareGroupId,
+              assignedRoomNumber: roomNumber,
+              id: { not: id },
+            },
+            select: { id: true },
+          })
+        : null;
+
+      if (!sharing) {
+        throw new BadRequestException(`객실 ${roomNumber} 은 이미 사용 중입니다.`);
+      }
     }
     if (room.status === RoomStatus.OUT_OF_ORDER || room.status === RoomStatus.OUT_OF_SERVICE) {
       throw new BadRequestException(`객실 ${roomNumber} 은 판매 불가 상태(${room.status})입니다.`);

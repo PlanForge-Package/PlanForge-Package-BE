@@ -10,6 +10,7 @@ import {
   CheckAvailabilityDto,
   CreateBookingDto,
   UpdateBookingDto,
+  ShareReservationDto,
 } from './dto/booking.dto';
 import { CheckInDto, CheckOutDto } from './dto/front-desk.dto';
 import { ListReservationsDto } from './dto/list-reservations.dto';
@@ -58,6 +59,18 @@ export class ReservationsController {
   @ApiOperation({ summary: '예약 취소' })
   cancel(@Param('id') id: string, @Body() dto: CancelBookingDto, @CurrentUser() user: AuthUser) {
     return this.booking.cancel(id, dto, user);
+  }
+
+  @Post(':id/share')
+  @ApiOperation({ summary: '객실 공유 — 두 예약이 한 방을 쓰고 계산은 따로 합니다' })
+  share(@Param('id') id: string, @Body() dto: ShareReservationDto, @CurrentUser() user: AuthUser) {
+    return this.booking.share(id, dto.withReservationId, user);
+  }
+
+  @Post(':id/unshare')
+  @ApiOperation({ summary: '공유 해제 — 이 예약만 묶음에서 뺍니다' })
+  unshare(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.booking.unshare(id, user);
   }
 
   @Post(':id/confirm-waitlist')

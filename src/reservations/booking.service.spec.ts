@@ -45,6 +45,9 @@ function buildPrisma() {
     property: { findUnique: jest.fn().mockResolvedValue(PROPERTY) },
     reservation: {
       findUnique: jest.fn(),
+      // 공유 해제가 혼자 남은 상대의 표시를 푼다.
+      findMany: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({}),
       upsert: jest.fn().mockImplementation(({ create, update }) => ({
         id: 'res-1',
         ...update,
@@ -75,6 +78,14 @@ function buildCore() {
       .fn()
       .mockResolvedValue({ ...OPERA_RESULT, status: 'Cancelled' as const }),
     confirmWaitlist: jest.fn().mockResolvedValue({ ...OPERA_RESULT, status: 'Confirmed' as const }),
+    shareReservation: jest.fn().mockResolvedValue({
+      shareGroupId: 'SHR-901',
+      reservations: [
+        { ...OPERA_RESULT, shareGroupId: 'SHR-901' },
+        { ...OPERA_RESULT, reservationId: 'OPERA-2002', shareGroupId: 'SHR-901' },
+      ],
+    }),
+    unshareReservation: jest.fn().mockResolvedValue({ ...OPERA_RESULT, shareGroupId: undefined }),
   };
 }
 
@@ -361,5 +372,106 @@ describe('BookingService — 대기 확정', () => {
     await service.create({ ...VALID_INPUT, waitlist: true }, HQ);
 
     expect(core.createReservation.mock.calls[0][0].waitlist).toBe(true);
+  });
+});
+
+describe('BookingService — 객실 공유', () => {
+  function linked(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'res-1',
+      propertyId: 'prop-1',
+      operaReservationId: 'OPERA-2001',
+      status: ReservationStatus.CONFIRMED,
+      shareGroupId: null,
+      property: PROPERTY,
+      ...overrides,
+    };
+  }
+
+  it('OPERA 에 묶음을 맡기고 둘 다 옮겨 적는다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique
+      .mockResolvedValueOnce(linked())
+      .mockResolvedValueOnce(linked({ id: 'res-2', operaReservationId: 'OPERA-2002' }));
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    const result = await service.share('res-1', 'res-2', HQ);
+
+    expect(core.shareReservation).toHaveBeenCalledWith('OPERA-2001', {
+      hotelId: 'SAND01',
+      withReservationId: 'OPERA-2002',
+    });
+    expect(result).toHaveLength(2);
+  });
+
+  // 호텔이 다르면 같은 방을 쓸 수 없다. 외부 호출 전에 막는다.
+  it('다른 호텔의 예약과는 묶지 않는다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique
+      .mockResolvedValueOnce(linked())
+      .mockResolvedValueOnce(linked({ id: 'res-2', propertyId: 'prop-2' }));
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await expect(service.share('res-1', 'res-2', HQ)).rejects.toThrow(/다른 호텔/);
+    expect(core.shareReservation).not.toHaveBeenCalled();
+  });
+
+  /*
+   * 겹치는 기간·같은 객실 타입인지는 OPERA 가 본다. 재고와 객실 배정을 아는
+   * 쪽이 판단해야 한다.
+   */
+  it('OPERA 가 거절하면 그대로 올린다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique
+      .mockResolvedValueOnce(linked())
+      .mockResolvedValueOnce(linked({ id: 'res-2', operaReservationId: 'OPERA-2002' }));
+    const core = buildCore();
+    core.shareReservation.mockRejectedValue(new BadRequestException('객실 타입이 다릅니다.'));
+    const service = await buildService(prisma, core);
+
+    await expect(service.share('res-1', 'res-2', HQ)).rejects.toThrow(/객실 타입이 다릅니다/);
+  });
+
+  it('공유 중이 아니면 해제하지 않는다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique.mockResolvedValue(linked());
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await expect(service.unshare('res-1', HQ)).rejects.toThrow(/공유 중인 예약이 아닙니다/);
+    expect(core.unshareReservation).not.toHaveBeenCalled();
+  });
+
+  /*
+   * OPERA 는 이미 풀었지만 그 예약은 응답에 실려 오지 않는다. 사본에 남겨 두면
+   * 공유가 아닌데 공유로 보인다.
+   */
+  it('혼자 남은 상대의 표시도 푼다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique.mockResolvedValue(linked({ shareGroupId: 'SHR-901' }));
+    prisma.reservation.findMany.mockResolvedValue([{ id: 'res-2' }]);
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.unshare('res-1', HQ);
+
+    expect(prisma.reservation.update).toHaveBeenCalledWith({
+      where: { id: 'res-2' },
+      data: { shareGroupId: null },
+    });
+  });
+
+  it('둘 넘게 남았으면 표시를 그대로 둔다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique.mockResolvedValue(linked({ shareGroupId: 'SHR-901' }));
+    prisma.reservation.findMany.mockResolvedValue([{ id: 'res-2' }, { id: 'res-3' }]);
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.unshare('res-1', HQ);
+
+    expect(prisma.reservation.update).not.toHaveBeenCalled();
   });
 });

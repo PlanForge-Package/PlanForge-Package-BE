@@ -177,3 +177,11 @@ export class CancelBookingDto {
   @MaxLength(200)
   reason?: string;
 }
+
+/** 객실 공유. 상대 예약을 지정해 한 묶음으로 만든다. */
+export class ShareReservationDto {
+  @ApiProperty({ description: '함께 묶을 상대 예약 ID' })
+  @IsString()
+  @MaxLength(60)
+  withReservationId!: string;
+}

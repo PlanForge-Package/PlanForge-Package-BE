@@ -217,6 +217,7 @@ cd deploy && docker compose up -d
 | `GET` | `/api/reservations/:id` | 单条预订（含账单） |
 | `POST` | `/api/reservations/:id/check-in` | 入住 —— 分房 · 开账 |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | 候补转确认（委托 OPERA） |
+| `POST` | `/api/reservations/:id/share` `\|` `/unshare` | 共享客房 · 解除共享 |
 | `POST` | `/api/reservations/:id/check-out` | 退房 —— 结账 · 释放房间 |
 | `GET` `POST` | `/api/reservations/:id/folios` | 账单查询 · 新增账窗 |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | 入账 |

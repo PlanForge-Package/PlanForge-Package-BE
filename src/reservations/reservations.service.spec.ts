@@ -52,6 +52,8 @@ function buildPrisma(tx: ReturnType<typeof buildTx>, overrides: Record<string, u
   return {
     reservation: {
       findUnique: jest.fn(),
+      // 공유 상대가 그 방을 쓰고 있는지 확인한다.
+      findFirst: jest.fn().mockResolvedValue(null),
       ...((overrides.reservation as object) ?? {}),
     },
     room: {
@@ -453,5 +455,62 @@ describe('ReservationsService', () => {
         BadRequestException,
       );
     });
+  });
+});
+
+describe('ReservationsService — 객실 공유', () => {
+  const OCCUPIED = { id: 'room-1', number: '1203', occupied: true, status: RoomStatus.CLEAN };
+
+  /*
+   * 두 손님이 한 방을 쓰되 계산만 따로 하는 편성이 공유다. OPERA 도 같은
+   * 규칙으로 판단한다.
+   */
+  it('공유 상대가 든 방에는 함께 들어간다', async () => {
+    const tx = buildTx();
+    const prisma = buildPrisma(tx);
+    prisma.reservation.findUnique.mockResolvedValue({
+      ...BASE_RESERVATION,
+      shareGroupId: 'SHR-901',
+    });
+    prisma.reservation.findFirst.mockResolvedValue({ id: 'res-2' });
+    prisma.room.findUnique.mockResolvedValue(OCCUPIED);
+    tx.reservation.update.mockResolvedValue({ id: 'res-1' });
+
+    const core = buildCore();
+    const service = await buildService(prisma, buildDoorLock(), core);
+
+    await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).resolves.toBeDefined();
+    expect(core.checkInReservation).toHaveBeenCalled();
+  });
+
+  it('공유가 아니면 든 방에 들어가지 못한다', async () => {
+    const tx = buildTx();
+    const prisma = buildPrisma(tx);
+    prisma.reservation.findUnique.mockResolvedValue(BASE_RESERVATION);
+    prisma.room.findUnique.mockResolvedValue(OCCUPIED);
+
+    const service = await buildService(prisma);
+
+    await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
+      /사용 중/,
+    );
+  });
+
+  // 같은 묶음이어도 그 방에 있는 상대가 아니면 남의 방이다.
+  it('같은 묶음이어도 다른 방이면 막는다', async () => {
+    const tx = buildTx();
+    const prisma = buildPrisma(tx);
+    prisma.reservation.findUnique.mockResolvedValue({
+      ...BASE_RESERVATION,
+      shareGroupId: 'SHR-901',
+    });
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    prisma.room.findUnique.mockResolvedValue(OCCUPIED);
+
+    const service = await buildService(prisma);
+
+    await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
+      /사용 중/,
+    );
   });
 });

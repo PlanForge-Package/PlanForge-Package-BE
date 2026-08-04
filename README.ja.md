@@ -220,6 +220,7 @@ cd deploy && docker compose up -d
 | `GET` | `/api/reservations/:id` | 予約単件（フォリオ含む） |
 | `POST` | `/api/reservations/:id/check-in` | チェックイン —— 客室割当・フォリオ開設 |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | ウェイトリスト確定（OPERA へ委譲） |
+| `POST` | `/api/reservations/:id/share` `\|` `/unshare` | 客室シェア・解除 |
 | `POST` | `/api/reservations/:id/check-out` | チェックアウト —— フォリオ締め・客室返却 |
 | `GET` `POST` | `/api/reservations/:id/folios` | フォリオ照会・ウィンドウ追加 |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | 請求・入金の登録 |

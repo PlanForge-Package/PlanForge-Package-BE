@@ -204,6 +204,7 @@ export class BookingService {
       children: source.children ?? 0,
       assignedRoomNumber: source.roomNumber ?? null,
       blockCode: source.blockCode ?? null,
+      shareGroupId: source.shareGroupId ?? null,
       sourceCode: source.sourceCode ?? null,
       marketCode: source.marketCode ?? null,
       channelCode: source.channelCode ?? null,
@@ -273,6 +274,89 @@ export class BookingService {
       );
       const mirrored = await this.mirror(property, confirmed);
       await this.finishLog(log.id, SyncStatus.SUCCESS, confirmed.reservationId);
+      return mirrored;
+    } catch (error) {
+      await this.finishLog(log.id, SyncStatus.FAILED, reservation.operaReservationId, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 객실 공유.
+   *
+   * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 겹치는 기간·같은 객실
+   * 타입인지, 이미 다른 방에 들어가 있지는 않은지는 OPERA 가 본다 — 재고와
+   * 객실 배정을 아는 쪽이 판단해야 한다.
+   */
+  async share(id: string, withReservationId: string, user: AuthUser): Promise<Reservation[]> {
+    const { reservation, property } = await this.loadLinked(id, user);
+    const { reservation: partner } = await this.loadLinked(withReservationId, user);
+
+    // 호텔이 다르면 같은 방을 쓸 수 없다. 외부 호출 전에 막는다.
+    if (partner.propertyId !== reservation.propertyId) {
+      throw new BadRequestException('다른 호텔의 예약과는 객실을 함께 쓸 수 없습니다.');
+    }
+
+    const log = await this.startLog('Reservation', reservation.operaReservationId, {
+      action: 'share',
+      withReservationId: partner.operaReservationId,
+    });
+
+    try {
+      const result = await this.core.shareReservation(reservation.operaReservationId!, {
+        hotelId: property.operaHotelId,
+        withReservationId: partner.operaReservationId!,
+      });
+
+      const mirrored = [];
+      for (const source of result.reservations) {
+        mirrored.push(await this.mirror(property, source));
+      }
+      await this.finishLog(log.id, SyncStatus.SUCCESS, reservation.operaReservationId);
+      return mirrored;
+    } catch (error) {
+      await this.finishLog(log.id, SyncStatus.FAILED, reservation.operaReservationId, error);
+      throw error;
+    }
+  }
+
+  /** 공유 해제. 이 예약만 묶음에서 뺀다. */
+  async unshare(id: string, user: AuthUser): Promise<Reservation> {
+    const { reservation, property } = await this.loadLinked(id, user);
+
+    if (!reservation.shareGroupId) {
+      throw new BadRequestException('공유 중인 예약이 아닙니다.');
+    }
+
+    const log = await this.startLog('Reservation', reservation.operaReservationId, {
+      action: 'unshare',
+    });
+
+    try {
+      const updated = await this.core.unshareReservation(
+        reservation.operaReservationId!,
+        property.operaHotelId,
+      );
+      const mirrored = await this.mirror(property, updated);
+
+      /*
+       * 혼자 남은 상대의 표시도 푼다.
+       *
+       * OPERA 는 이미 풀었지만 그 예약은 이번 응답에 실려 오지 않는다. 사본에
+       * 남겨 두면 공유가 아닌데 공유로 보인다.
+       */
+      const remaining = await this.prisma.reservation.findMany({
+        where: { shareGroupId: reservation.shareGroupId },
+        select: { id: true },
+      });
+      if (remaining.length === 1) {
+        await this.prisma.reservation.update({
+          where: { id: remaining[0]!.id },
+          data: { shareGroupId: null },
+        });
+      }
+
+      await this.finishLog(log.id, SyncStatus.SUCCESS, updated.reservationId);
       return mirrored;
     } catch (error) {
       await this.finishLog(log.id, SyncStatus.FAILED, reservation.operaReservationId, error);

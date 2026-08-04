@@ -221,6 +221,7 @@ internal network with no published ports.
 | `GET` | `/api/reservations/:id` | Single reservation (with folios) |
 | `POST` | `/api/reservations/:id/check-in` | Check in — assign room · open folio |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | Confirm a waitlisted booking |
+| `POST` | `/api/reservations/:id/share` `\|` `/unshare` | Share a room · leave the group |
 | `POST` | `/api/reservations/:id/check-out` | Check out — close folio · release room |
 | `GET` `POST` | `/api/reservations/:id/folios` | Folios · open a window |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | Post a charge or payment |

@@ -21,6 +21,7 @@ import type {
   CoreReservationListParams,
   CoreReservationListResponse,
   CoreRoomOutage,
+  CoreShareResponse,
   CoreRoomOutageListResponse,
   CoreRoomStatus,
   CoreUpdateBlockInput,
@@ -272,6 +273,26 @@ export class CoreClient {
   confirmWaitlist(reservationId: string, hotelId?: string): Promise<CoreReservation> {
     return this.request<CoreReservation>(
       `/v1/reservations/${encodeURIComponent(reservationId)}/confirm-waitlist`,
+      undefined,
+      { method: 'POST', json: hotelId ? { hotelId } : {} },
+    );
+  }
+
+  /** 객실 공유. 두 예약이 한 방을 쓰고 계산은 따로 한다. */
+  shareReservation(
+    reservationId: string,
+    input: { hotelId?: string; withReservationId: string },
+  ): Promise<CoreShareResponse> {
+    return this.request<CoreShareResponse>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/share`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
+  unshareReservation(reservationId: string, hotelId?: string): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/unshare`,
       undefined,
       { method: 'POST', json: hotelId ? { hotelId } : {} },
     );

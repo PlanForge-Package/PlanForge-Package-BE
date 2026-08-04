@@ -219,6 +219,7 @@ cd deploy && docker compose up -d
 | `GET` | `/api/reservations/:id` | 예약 단건 (폴리오 포함) |
 | `POST` | `/api/reservations/:id/check-in` | 체크인 — 객실 배정 · 폴리오 개설 |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | 대기 확정 (OPERA 위임) |
+| `POST` | `/api/reservations/:id/share` `\|` `/unshare` | 객실 공유 · 해제 (OPERA 위임) |
 | `POST` | `/api/reservations/:id/check-out` | 체크아웃 — 폴리오 마감 · 객실 반납 |
 | `GET` `POST` | `/api/reservations/:id/folios` | 폴리오 조회 · 윈도 추가 |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | 청구·결제 등록 |
