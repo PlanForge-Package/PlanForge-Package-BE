@@ -82,14 +82,26 @@ export interface CoreReservationListParams {
 export interface CoreNightlyRate {
   date: string;
   amount: number;
+  /** 그날 붙는 패키지 금액. 요금에 포함된 패키지는 0 이다. */
+  packageAmount?: number;
+}
+
+export interface CoreRateOfferPackage {
+  packageCode: string;
+  name: string;
+  amount: number;
+  calculation: string;
+  includedInRate: boolean;
 }
 
 export interface CoreRateOffer {
   ratePlanCode: string;
+  ratePlanName?: string;
   roomTypeCode: string;
   roomTypeName?: string;
   currency: string;
   nightlyRates: CoreNightlyRate[];
+  packages?: CoreRateOfferPackage[];
   totalAmount: number;
 }
 
@@ -107,6 +119,108 @@ export interface CoreRateParams {
   departureDate: string;
   roomTypeCode?: string;
   ratePlanCode?: string;
+  adults?: number;
+}
+
+// --- 요금 코드 설정. OPERA 가 원천이라 사본을 두지 않는다 ---------------------
+
+export interface CoreRateSeason {
+  seasonId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  /** 0=일요일. 비우면 기간 내 매일. */
+  daysOfWeek?: number[];
+  amounts: Record<string, number>;
+}
+
+export interface CoreRatePlan {
+  ratePlanCode: string;
+  hotelId: string;
+  name: string;
+  description?: string;
+  currency: string;
+  marketCode: string;
+  sellStartDate: string;
+  sellEndDate: string;
+  baseAmounts: Record<string, number>;
+  seasons: CoreRateSeason[];
+  packageCodes: string[];
+  status: string;
+}
+
+export interface CoreRatePlanListResponse {
+  hotelId: string;
+  items: CoreRatePlan[];
+}
+
+export interface CoreCreateRatePlanInput {
+  hotelId?: string;
+  ratePlanCode: string;
+  name: string;
+  description?: string;
+  currency?: string;
+  marketCode?: string;
+  sellStartDate: string;
+  sellEndDate: string;
+  baseAmounts: Record<string, number>;
+  packageCodes?: string[];
+  status?: 'Active' | 'Inactive';
+}
+
+export interface CoreUpdateRatePlanInput {
+  hotelId?: string;
+  name?: string;
+  description?: string;
+  marketCode?: string;
+  sellStartDate?: string;
+  sellEndDate?: string;
+  baseAmounts?: Record<string, number>;
+  packageCodes?: string[];
+  status?: 'Active' | 'Inactive';
+}
+
+export interface CoreCreateSeasonInput {
+  hotelId?: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  daysOfWeek?: number[];
+  amounts: Record<string, number>;
+}
+
+export interface CorePackage {
+  packageCode: string;
+  hotelId: string;
+  name: string;
+  amount: number;
+  calculation: string;
+  transactionCode: string;
+  includedInRate: boolean;
+}
+
+export interface CorePackageListResponse {
+  hotelId: string;
+  items: CorePackage[];
+}
+
+export interface CoreCreatePackageInput {
+  hotelId?: string;
+  packageCode: string;
+  name: string;
+  amount: number;
+  calculation: 'PerNight' | 'PerStay' | 'PerPerson';
+  transactionCode: string;
+  includedInRate?: boolean;
+}
+
+export interface CoreUpdatePackageInput {
+  hotelId?: string;
+  name?: string;
+  amount?: number;
+  calculation?: 'PerNight' | 'PerStay' | 'PerPerson';
+  transactionCode?: string;
+  includedInRate?: boolean;
 }
 
 /** Core 가 OPERA 에서 받아 정규화한 객실 상태. */
@@ -293,13 +407,20 @@ export interface CoreCreateBlockInput {
   endDate: string;
   cutoffDate?: string;
   status?: CoreBlockStatus;
-  allotments: Array<{ roomTypeCode: string; blocked: number; ratePlanCode?: string }>;
+  allotments: Array<{
+    roomTypeCode: string;
+    blocked: number;
+    ratePlanCode?: string;
+    /** 협의 요금. 넣으면 요금 코드의 계산 대신 이 금액으로 판다. */
+    amount?: number;
+  }>;
 }
 
 export interface CoreUpdateBlockInput {
   name?: string;
   status?: CoreBlockStatus;
   cutoffDate?: string;
+  rates?: Array<{ roomTypeCode: string; ratePlanCode?: string; amount: number }>;
 }
 
 export interface CoreAvailabilityParams {

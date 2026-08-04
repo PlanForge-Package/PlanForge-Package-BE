@@ -14,9 +14,18 @@ import type {
   CoreCreateRoomOutageInput,
   CoreFolio,
   CoreFolioListResponse,
+  CoreCreatePackageInput,
+  CoreCreateRatePlanInput,
+  CoreCreateSeasonInput,
+  CorePackage,
+  CorePackageListResponse,
   CoreProfile,
   CoreRateParams,
+  CoreRatePlan,
+  CoreRatePlanListResponse,
   CoreRateResponse,
+  CoreUpdatePackageInput,
+  CoreUpdateRatePlanInput,
   CoreReservation,
   CoreReservationListParams,
   CoreReservationListResponse,
@@ -67,6 +76,68 @@ export class CoreClient {
 
   getRates(params: CoreRateParams): Promise<CoreRateResponse> {
     return this.request<CoreRateResponse>('/v1/rates', { ...params });
+  }
+
+  // --- 요금 코드 설정 --------------------------------------------------------
+
+  listRatePlans(hotelId?: string, status?: string): Promise<CoreRatePlanListResponse> {
+    return this.request<CoreRatePlanListResponse>('/v1/rate-plans', { hotelId, status });
+  }
+
+  getRatePlan(ratePlanCode: string, hotelId?: string): Promise<CoreRatePlan> {
+    return this.request<CoreRatePlan>(`/v1/rate-plans/${encodeURIComponent(ratePlanCode)}`, {
+      hotelId,
+    });
+  }
+
+  createRatePlan(input: CoreCreateRatePlanInput): Promise<CoreRatePlan> {
+    return this.request<CoreRatePlan>('/v1/rate-plans', undefined, {
+      method: 'POST',
+      json: input,
+    });
+  }
+
+  updateRatePlan(ratePlanCode: string, input: CoreUpdateRatePlanInput): Promise<CoreRatePlan> {
+    return this.request<CoreRatePlan>(
+      `/v1/rate-plans/${encodeURIComponent(ratePlanCode)}`,
+      undefined,
+      { method: 'PATCH', json: input },
+    );
+  }
+
+  addRateSeason(ratePlanCode: string, input: CoreCreateSeasonInput): Promise<CoreRatePlan> {
+    return this.request<CoreRatePlan>(
+      `/v1/rate-plans/${encodeURIComponent(ratePlanCode)}/seasons`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
+  removeRateSeason(
+    ratePlanCode: string,
+    seasonId: string,
+    hotelId?: string,
+  ): Promise<CoreRatePlan> {
+    return this.request<CoreRatePlan>(
+      `/v1/rate-plans/${encodeURIComponent(ratePlanCode)}/seasons/${encodeURIComponent(seasonId)}`,
+      undefined,
+      { method: 'DELETE', json: { hotelId } },
+    );
+  }
+
+  listPackages(hotelId?: string): Promise<CorePackageListResponse> {
+    return this.request<CorePackageListResponse>('/v1/packages', { hotelId });
+  }
+
+  createPackage(input: CoreCreatePackageInput): Promise<CorePackage> {
+    return this.request<CorePackage>('/v1/packages', undefined, { method: 'POST', json: input });
+  }
+
+  updatePackage(packageCode: string, input: CoreUpdatePackageInput): Promise<CorePackage> {
+    return this.request<CorePackage>(`/v1/packages/${encodeURIComponent(packageCode)}`, undefined, {
+      method: 'PATCH',
+      json: input,
+    });
   }
 
   getBusinessDate(hotelId?: string): Promise<CoreBusinessDate> {

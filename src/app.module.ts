@@ -17,6 +17,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PosModule } from './pos/pos.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { PropertiesModule } from './properties/properties.module';
+import { RatesModule } from './rates/rates.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { RoomOutagesModule } from './room-outages/room-outages.module';
@@ -45,6 +46,7 @@ import { UsersModule } from './users/users.module';
     PosModule,
     ProfilesModule,
     PropertiesModule,
+    RatesModule,
     ReportsModule,
     ReservationsModule,
     RoomOutagesModule,

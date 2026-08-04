@@ -292,6 +292,13 @@ cd deploy && docker compose up -d
 | `GET` | `/api/housekeeping/discrepancies` | ステータスと在館の不一致 |
 | `GET` | `/api/night-audit` | 締めチェックリスト |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | ノーショー処理 |
+| `GET` | `/api/rates/quote` | 期間料金 — 日別単価・パッケージ |
+| `GET` `POST` | `/api/rates/plans` | 料金コード一覧・登録 (MANAGER) |
+| `GET` `PATCH` | `/api/rates/plans/:ratePlanCode` | 料金コード単件・修正 |
+| `POST` | `/api/rates/plans/:ratePlanCode/seasons` | シーズン料金の追加 — 期間・曜日 (MANAGER) |
+| `DELETE` | `/api/rates/plans/:ratePlanCode/seasons/:seasonId` | シーズン料金の削除 (MANAGER) |
+| `GET` `POST` | `/api/rates/packages` | パッケージ一覧・登録 (MANAGER) |
+| `PATCH` | `/api/rates/packages/:packageCode` | パッケージ修正 (MANAGER) |
 | `GET` | `/api/reports/daily` | 稼働率・ADR・RevPAR・チャネル別内訳（MANAGER） |
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS アウトレット管理（MANAGER） |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | ルームチャージ（アウトレットキー） |

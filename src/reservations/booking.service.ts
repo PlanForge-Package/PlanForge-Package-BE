@@ -63,6 +63,8 @@ export class BookingService {
       hotelId: property.operaHotelId,
       arrivalDate: dto.arrivalDate,
       departureDate: dto.departureDate,
+      // 1인당 붙는 패키지가 있다. 인원을 빼면 안내 금액과 청구가 갈린다.
+      adults: dto.adults,
     });
 
     return { propertyId: property.id, ...result };

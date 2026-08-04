@@ -293,6 +293,13 @@ internal network with no published ports.
 | `GET` | `/api/housekeeping/discrepancies` | Status vs occupancy mismatches |
 | `GET` | `/api/night-audit` | Close-of-day checklist |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | Mark no-show |
+| `GET` | `/api/rates/quote` | Rates for a stay — nightly and packages |
+| `GET` `POST` | `/api/rates/plans` | Rate plans · create (MANAGER) |
+| `GET` `PATCH` | `/api/rates/plans/:ratePlanCode` | One rate plan · update |
+| `POST` | `/api/rates/plans/:ratePlanCode/seasons` | Add a season — dates and days (MANAGER) |
+| `DELETE` | `/api/rates/plans/:ratePlanCode/seasons/:seasonId` | Remove a season (MANAGER) |
+| `GET` `POST` | `/api/rates/packages` | Packages · create (MANAGER) |
+| `PATCH` | `/api/rates/packages/:packageCode` | Update a package (MANAGER) |
 | `GET` | `/api/reports/daily` | Occupancy · ADR · RevPAR · channel breakdown (MANAGER) |
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS outlet management (MANAGER) |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | Room charge (outlet key) |

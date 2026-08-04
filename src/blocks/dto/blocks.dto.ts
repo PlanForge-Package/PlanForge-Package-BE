@@ -52,6 +52,33 @@ export class BlockAllotmentInputDto {
   @IsString()
   @MaxLength(20)
   ratePlanCode?: string;
+
+  /** 단체는 값을 따로 합의한다. 넣으면 요금 코드의 계산 대신 이 금액으로 판다. */
+  @ApiPropertyOptional({ description: '협의 요금', example: 150000 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: '협의 요금은 정수여야 합니다.' })
+  @Min(0)
+  amount?: number;
+}
+
+export class BlockRateInputDto {
+  @ApiProperty({ example: 'DLXK' })
+  @IsString()
+  @MaxLength(20)
+  roomTypeCode!: string;
+
+  @ApiPropertyOptional({ example: 'CORP' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  ratePlanCode?: string;
+
+  @ApiProperty({ example: 150000 })
+  @Type(() => Number)
+  @IsInt({ message: '협의 요금은 정수여야 합니다.' })
+  @Min(0)
+  amount!: number;
 }
 
 export class CreateBlockDto {
@@ -116,4 +143,13 @@ export class UpdateBlockDto {
   @IsOptional()
   @Matches(DATE_ONLY, { message: 'cutoffDate 는 YYYY-MM-DD 형식이어야 합니다.' })
   cutoffDate?: string;
+
+  /** 협의 요금 조정. 보낸 객실 타입만 바꾼다. */
+  @ApiPropertyOptional({ type: [BlockRateInputDto] })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @ArrayMinSize(1)
+  @ArrayMaxSize(20)
+  @Type(() => BlockRateInputDto)
+  rates?: BlockRateInputDto[];
 }

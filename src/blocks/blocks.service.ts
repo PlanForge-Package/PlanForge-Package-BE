@@ -96,7 +96,8 @@ export class BlocksService {
         allotments: dto.allotments.map((slot) => ({
           roomTypeCode: slot.roomTypeCode.toUpperCase(),
           blocked: slot.blocked,
-          ratePlanCode: slot.ratePlanCode,
+          ratePlanCode: slot.ratePlanCode?.toUpperCase(),
+          amount: slot.amount,
         })),
       });
 
@@ -127,6 +128,11 @@ export class BlocksService {
         name: dto.name,
         status: dto.status ? toCoreBlockStatus(dto.status) : undefined,
         cutoffDate: dto.cutoffDate,
+        rates: dto.rates?.map((row) => ({
+          roomTypeCode: row.roomTypeCode.toUpperCase(),
+          ratePlanCode: row.ratePlanCode?.toUpperCase(),
+          amount: row.amount,
+        })),
       });
 
       const mirrored = await this.mirror(property, updated);

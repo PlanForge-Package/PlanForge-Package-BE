@@ -291,6 +291,13 @@ cd deploy && docker compose up -d
 | `GET` | `/api/housekeeping/discrepancies` | 객실 상태·재실 불일치 |
 | `GET` | `/api/night-audit` | 마감 점검표 |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | 노쇼 처리 |
+| `GET` | `/api/rates/quote` | 기간 요금 — 일자별 단가·패키지 |
+| `GET` `POST` | `/api/rates/plans` | 요금 코드 목록 · 등록 (MANAGER) |
+| `GET` `PATCH` | `/api/rates/plans/:ratePlanCode` | 요금 코드 단건 · 수정 |
+| `POST` | `/api/rates/plans/:ratePlanCode/seasons` | 시즌 요금 추가 — 기간·요일 (MANAGER) |
+| `DELETE` | `/api/rates/plans/:ratePlanCode/seasons/:seasonId` | 시즌 요금 삭제 (MANAGER) |
+| `GET` `POST` | `/api/rates/packages` | 패키지 목록 · 등록 (MANAGER) |
+| `PATCH` | `/api/rates/packages/:packageCode` | 패키지 수정 (MANAGER) |
 | `GET` | `/api/reports/daily` | 점유율·ADR·RevPAR·채널별 분해 (MANAGER) |
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS 아웃렛 관리 (MANAGER) |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | 룸차지 (아웃렛 키) |

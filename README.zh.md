@@ -289,6 +289,13 @@ cd deploy && docker compose up -d
 | `GET` | `/api/housekeeping/discrepancies` | 房态与在住的差异 |
 | `GET` | `/api/night-audit` | 夜审检查表 |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | No-show 处理 |
+| `GET` | `/api/rates/quote` | 期间房价 —— 按日单价与套餐 |
+| `GET` `POST` | `/api/rates/plans` | 房价代码列表 · 新建（MANAGER）|
+| `GET` `PATCH` | `/api/rates/plans/:ratePlanCode` | 单个房价代码 · 修改 |
+| `POST` | `/api/rates/plans/:ratePlanCode/seasons` | 新增季节房价 —— 期间与星期（MANAGER）|
+| `DELETE` | `/api/rates/plans/:ratePlanCode/seasons/:seasonId` | 删除季节房价（MANAGER）|
+| `GET` `POST` | `/api/rates/packages` | 套餐列表 · 新建（MANAGER）|
+| `PATCH` | `/api/rates/packages/:packageCode` | 修改套餐（MANAGER）|
 | `GET` | `/api/reports/daily` | 出租率 · ADR · RevPAR · 渠道拆解（MANAGER） |
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS 门店管理（MANAGER） |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | 挂房账（门店密钥） |
