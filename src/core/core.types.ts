@@ -192,6 +192,8 @@ export interface CoreCreateReservationInput {
   children?: number;
   /** 단체 블록에서 빼는 예약이면 블록 코드. OPERA 가 픽업으로 잡는다. */
   blockCode?: string;
+  /** 매진이어도 대기로 받는다. 대기 예약은 재고를 차지하지 않는다. */
+  waitlist?: boolean;
   /** 예약 경로. 비우면 OPERA 가 직접 예약으로 잡는다. */
   sourceCode?: string;
   marketCode?: string;

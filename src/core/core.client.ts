@@ -263,6 +263,20 @@ export class CoreClient {
     );
   }
 
+  /**
+   * 대기 확정.
+   *
+   * 자리가 났는지는 확정하는 순간 OPERA 가 세어 본다. 우리가 미리 판단하면
+   * 그 사이 다른 대기 건이 먼저 확정된 경우를 놓친다.
+   */
+  confirmWaitlist(reservationId: string, hotelId?: string): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/confirm-waitlist`,
+      undefined,
+      { method: 'POST', json: hotelId ? { hotelId } : {} },
+    );
+  }
+
   noShowReservation(reservationId: string, reason?: string): Promise<CoreReservation> {
     return this.request<CoreReservation>(
       `/v1/reservations/${encodeURIComponent(reservationId)}/no-show`,

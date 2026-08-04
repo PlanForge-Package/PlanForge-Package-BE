@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEmail,
   IsInt,
@@ -85,6 +85,17 @@ export class CreateBookingDto extends CheckAvailabilityDto {
   @IsString()
   @MaxLength(20)
   blockCode?: string;
+
+  /**
+   * 매진이어도 대기로 받는다.
+   *
+   * 대기 예약은 재고를 차지하지 않고, 자리가 나면 확정으로 올린다. 이 값을
+   * 주지 않으면 매진일 때 OPERA 가 예약 자체를 거절한다.
+   */
+  @ApiPropertyOptional({ description: '매진이어도 대기로 받을지', default: false })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  waitlist?: boolean;
 
   /**
    * 예약 경로.

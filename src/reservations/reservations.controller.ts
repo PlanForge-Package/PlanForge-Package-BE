@@ -60,6 +60,12 @@ export class ReservationsController {
     return this.booking.cancel(id, dto, user);
   }
 
+  @Post(':id/confirm-waitlist')
+  @ApiOperation({ summary: '대기 확정 — 확정 시점에 OPERA 가 재고를 다시 봅니다' })
+  confirmWaitlist(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.booking.confirmWaitlist(id, user);
+  }
+
   // --- 로컬 조회·프론트데스크 -------------------------------------------
   // 모든 조회·조작에 요청자를 함께 넘긴다. 소속이 지정된 직원은 자기 호텔로 고정된다.
   @Get()

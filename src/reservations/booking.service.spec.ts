@@ -1,6 +1,6 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { SyncDirection, SyncStatus, UserRole } from '@prisma/client';
+import { ReservationStatus, SyncDirection, SyncStatus, UserRole } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 import type { CoreReservation } from '../core/core.types';
@@ -74,6 +74,7 @@ function buildCore() {
     cancelReservation: jest
       .fn()
       .mockResolvedValue({ ...OPERA_RESULT, status: 'Cancelled' as const }),
+    confirmWaitlist: jest.fn().mockResolvedValue({ ...OPERA_RESULT, status: 'Confirmed' as const }),
   };
 }
 
@@ -296,5 +297,69 @@ describe('BookingService — 가용성·요금', () => {
       service.getRates({ arrivalDate: '2026-09-01', departureDate: '2026-09-03' }, HQ),
     ).rejects.toThrow(/호텔을 선택/);
     expect(core.getRates).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookingService — 대기 확정', () => {
+  function waitlisted() {
+    return {
+      id: 'res-1',
+      propertyId: 'prop-1',
+      operaReservationId: 'OPERA-2001',
+      status: ReservationStatus.WAITLISTED,
+      property: PROPERTY,
+    };
+  }
+
+  it('OPERA 에 확정을 맡긴다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique.mockResolvedValue(waitlisted());
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.confirmWaitlist('res-1', HQ);
+
+    expect(core.confirmWaitlist).toHaveBeenCalledWith('OPERA-2001', 'SAND01');
+  });
+
+  it('대기 상태가 아니면 호출하지 않는다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique.mockResolvedValue({
+      ...waitlisted(),
+      status: ReservationStatus.CONFIRMED,
+    });
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await expect(service.confirmWaitlist('res-1', HQ)).rejects.toThrow(/대기 상태가 아닙니다/);
+    expect(core.confirmWaitlist).not.toHaveBeenCalled();
+  });
+
+  /*
+   * 그 사이 다른 대기 건이 먼저 확정됐을 수 있다. 그 판단은 OPERA 가 하고,
+   * 거절은 그대로 올린다.
+   */
+  it('OPERA 가 거절하면 그대로 올린다', async () => {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique.mockResolvedValue(waitlisted());
+    const core = buildCore();
+    core.confirmWaitlist.mockRejectedValue(new ConflictException('아직 빈 객실이 없습니다.'));
+    const service = await buildService(prisma, core);
+
+    await expect(service.confirmWaitlist('res-1', HQ)).rejects.toThrow(/빈 객실이 없습니다/);
+    expect(prisma.syncLog.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: SyncStatus.FAILED }) }),
+    );
+  });
+
+  // 매진일 때 손님을 그냥 돌려보내지 않으려면 대기로 받는다.
+  it('생성 시 대기 여부를 그대로 넘긴다', async () => {
+    const prisma = buildPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.create({ ...VALID_INPUT, waitlist: true }, HQ);
+
+    expect(core.createReservation.mock.calls[0][0].waitlist).toBe(true);
   });
 });

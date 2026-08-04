@@ -1,5 +1,12 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma, SyncDirection, SyncStatus, type Property, type Reservation } from '@prisma/client';
+import {
+  Prisma,
+  ReservationStatus,
+  SyncDirection,
+  SyncStatus,
+  type Property,
+  type Reservation,
+} from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 import type { CoreReservation } from '../core/core.types';
@@ -80,6 +87,7 @@ export class BookingService {
         adults: dto.adults ?? 1,
         children: dto.children ?? 0,
         blockCode: dto.blockCode,
+        waitlist: dto.waitlist,
         sourceCode: dto.sourceCode,
         marketCode: dto.marketCode,
         channelCode: dto.channelCode,
@@ -239,6 +247,37 @@ export class BookingService {
     });
 
     return existing?.operaProfileId ?? undefined;
+  }
+
+  /**
+   * 대기 확정.
+   *
+   * 자리가 났는지는 확정하는 순간 OPERA 가 세어 본다. 우리가 미리 판단하면 그
+   * 사이 다른 대기 건이 먼저 확정된 경우를 놓친다.
+   */
+  async confirmWaitlist(id: string, user: AuthUser): Promise<Reservation> {
+    const { reservation, property } = await this.loadLinked(id, user);
+
+    if (reservation.status !== ReservationStatus.WAITLISTED) {
+      throw new BadRequestException(`대기 상태가 아닙니다: ${reservation.status}`);
+    }
+
+    const log = await this.startLog('Reservation', reservation.operaReservationId, {
+      action: 'confirmWaitlist',
+    });
+
+    try {
+      const confirmed = await this.core.confirmWaitlist(
+        reservation.operaReservationId!,
+        property.operaHotelId,
+      );
+      const mirrored = await this.mirror(property, confirmed);
+      await this.finishLog(log.id, SyncStatus.SUCCESS, confirmed.reservationId);
+      return mirrored;
+    } catch (error) {
+      await this.finishLog(log.id, SyncStatus.FAILED, reservation.operaReservationId, error);
+      throw error;
+    }
   }
 
   private async loadLinked(id: string, user: AuthUser) {
