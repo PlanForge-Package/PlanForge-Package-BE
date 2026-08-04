@@ -1,7 +1,7 @@
 import { ReservationStatus } from '@prisma/client';
 import type { CoreReservationStatus } from '../core/core.types';
 
-/** Core(OPERA 표기) → PlanForge 예약 상태. */
+/** Core (OPERA terms) to PlanForge reservation status. */
 const STATUS_MAP: Record<CoreReservationStatus, ReservationStatus> = {
   Reserved: ReservationStatus.RESERVED,
   Confirmed: ReservationStatus.CONFIRMED,
@@ -16,17 +16,17 @@ export function toReservationStatus(status: string): ReservationStatus {
   return STATUS_MAP[status as CoreReservationStatus] ?? ReservationStatus.RESERVED;
 }
 
-/** PlanForge → Core(OPERA 표기). 역방향 조회 필터에 쓴다. */
+/** PlanForge to Core (OPERA terms). Used for reverse query filters. */
 export function toCoreStatus(status: ReservationStatus): CoreReservationStatus | undefined {
   const entry = Object.entries(STATUS_MAP).find(([, value]) => value === status);
   return entry?.[0] as CoreReservationStatus | undefined;
 }
 
 /**
- * `YYYY-MM-DD` 를 Date 로 바꾼다.
+ * Turns `YYYY-MM-DD` into a Date.
  *
- * Prisma `@db.Date` 컬럼은 UTC 자정으로 저장되므로, 로컬 타임존이 UTC 뒤쪽일 때
- * 하루 밀리는 것을 막기 위해 반드시 UTC 로 파싱한다.
+ * Prisma `@db.Date` columns store UTC midnight, so parsing is forced to UTC to stop
+ * the date shifting a day when the local zone is behind UTC.
  */
 export function parseDateOnly(value: string): Date {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -37,7 +37,7 @@ export function parseDateOnly(value: string): Date {
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
 }
 
-/** Date → `YYYY-MM-DD` (UTC 기준). */
+/** Date to `YYYY-MM-DD`, in UTC. */
 export function formatDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }

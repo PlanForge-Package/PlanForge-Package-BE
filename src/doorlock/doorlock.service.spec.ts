@@ -19,7 +19,7 @@ function utc(iso: string): Date {
   return new Date(`${iso}T00:00:00Z`);
 }
 
-/** 오늘 기준으로 두어 "체크아웃 시각이 지났다" 검사에 걸리지 않게 한다. */
+/** Kept relative to today so the "check-out time has passed" check does not fire. */
 function futureStay(overrides: Record<string, unknown> = {}) {
   const today = new Date();
   const arrival = new Date(today.getTime() - 86_400_000);
@@ -107,7 +107,7 @@ describe('DoorLockService — 발급', () => {
     expect(key.vendorKeyId).toBe('MOCKKEY-NEW');
   });
 
-  // 아직 들어오지 않은 손님에게 카드를 주면 지금 그 방에 묵는 사람의 문이 열린다.
+  // A card given to a guest who has not arrived opens the door of whoever is there now.
   it('재실 상태가 아니면 거절한다', async () => {
     const prisma = buildPrisma();
     prisma.reservation.findUnique.mockResolvedValue(
@@ -128,7 +128,7 @@ describe('DoorLockService — 발급', () => {
     await expect(service.issue('res-1', {}, HQ)).rejects.toThrow(/배정된 객실/);
   });
 
-  // 분실 재발급인데 이전 카드가 살아 있으면 재발급의 의미가 없다.
+  // Reissuing after a loss is pointless if the old card is still alive.
   it('기본으로 이전 카드를 먼저 무효화한다', async () => {
     const prisma = buildPrisma({
       roomKey: {
@@ -147,7 +147,7 @@ describe('DoorLockService — 발급', () => {
 
     expect(driver.revoke).toHaveBeenCalledWith('MOCKKEY-AAA');
     expect(prisma.roomKey.update.mock.calls[0][0].data.revokedReason).toBe('재발급');
-    // 두 번째 발급이므로 차수가 올라간다.
+    // Second issue, so the count goes up.
     expect(driver.encode.mock.calls[0][0].sequence).toBe(2);
   });
 
@@ -168,8 +168,8 @@ describe('DoorLockService — 발급', () => {
   });
 
   /*
-   * 결과를 알 수 없는 실패와 명확한 거절은 다르게 안내해야 한다. 전자는 카드가
-   * 만들어졌을 수 있어 인코더를 확인해야 한다.
+   * An unknown outcome and a clear refusal need different messages. The first may
+   * have made a card, so the encoder has to be checked.
    */
   it('연결 실패는 카드가 만들어졌을 수 있다고 알린다', async () => {
     const prisma = buildPrisma();
@@ -190,7 +190,7 @@ describe('DoorLockService — 발급', () => {
     await expect(service.issue('res-1', {}, HQ)).rejects.toThrow(/인코더 용지 없음/);
   });
 
-  // 다른 호텔 예약에 카드를 발급하면 그 호텔 객실이 열린다.
+  // Issuing a card on another hotel's reservation opens that hotel's room.
   it('다른 호텔 예약은 막는다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
@@ -202,8 +202,8 @@ describe('DoorLockService — 발급', () => {
 
 describe('DoorLockService — 무효화', () => {
   /*
-   * 순서가 중요하다. 로컬만 먼저 바꾸면 벤더 호출이 실패했을 때 "죽었다고 적혀
-   * 있지만 실제로는 열리는 카드" 가 남고 아무도 모른다.
+   * The order matters. Changed locally first, a failed vendor call leaves a card
+   * "recorded as dead but actually opening", and nobody knows.
    */
   it('벤더에서 먼저 죽이고 로컬을 표시한다', async () => {
     const prisma = buildPrisma();
@@ -228,7 +228,7 @@ describe('DoorLockService — 무효화', () => {
     expect(prisma.roomKey.update).not.toHaveBeenCalled();
   });
 
-  // 이미 죽은 카드를 다시 죽이라는 요청은 성공으로 둔다. 멱등해야 한다.
+  // Killing an already dead card returns success. It has to be idempotent.
   it('이미 무효화된 카드는 그대로 돌려준다', async () => {
     const prisma = buildPrisma();
     prisma.roomKey.findUnique.mockResolvedValue(activeKey({ status: RoomKeyStatus.REVOKED }));
@@ -268,7 +268,7 @@ describe('DoorLockService — 무효화', () => {
 });
 
 describe('DoorLockService — 조회', () => {
-  // 배치로 상태를 갱신하면 배치가 밀린 동안 화면이 거짓말을 한다.
+  // Refreshing status by batch makes the screen lie while the batch is behind.
   it('유효 기간이 지난 카드는 만료로 보여 준다', async () => {
     const prisma = buildPrisma({
       roomKey: {
@@ -283,7 +283,7 @@ describe('DoorLockService — 조회', () => {
     expect(result.items[0]?.status).toBe(RoomKeyStatus.EXPIRED);
   });
 
-  // 모의 드라이버로 발급한 카드로는 어떤 문도 열리지 않는다. 화면이 알아야 한다.
+  // A card from the mock driver opens no door. The screen has to say so.
   it('드라이버 모드를 함께 알린다', async () => {
     const service = await buildService(buildPrisma());
     const result = await service.listByReservation('res-1', HQ);

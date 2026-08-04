@@ -80,13 +80,13 @@ describe('TracesService — 등록', () => {
     expect(created.propertyId).toBe('prop-1');
     expect(created.reservationId).toBe('res-1');
     expect(created.createdById).toBe('user-1');
-    // 앞뒤 공백은 목록에서 정렬을 흐트러뜨린다.
+    // Leading and trailing spaces disturb the ordering in the list.
     expect(created.note).toBe('유아용 침대');
   });
 
   /*
-   * 손님이 나간 뒤의 날짜로 잡으면 그 부서의 그날 목록에는 뜨지만 대상이 이미
-   * 없다.
+   * Dated after the guest leaves, it shows on that department's list for the day
+   * but the subject is gone.
    */
   it('출발일 이후 날짜는 거절한다', async () => {
     const prisma = buildPrisma();
@@ -106,7 +106,7 @@ describe('TracesService — 등록', () => {
     ).resolves.toBeDefined();
   });
 
-  // 도착 전 준비는 있을 수 있다.
+  // Pre-arrival preparation is valid.
   it('도착 전 날짜는 막지 않는다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
@@ -159,7 +159,7 @@ describe('TracesService — 목록', () => {
     expect(result.date).toBe(new Date().toISOString().slice(0, 10));
   });
 
-  // 미처리를 먼저 보여야 아침에 무엇을 해야 하는지 바로 보인다.
+  // Outstanding items come first so the morning list shows what to do.
   it('미처리를 앞에 둔다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
@@ -216,7 +216,7 @@ describe('TracesService — 처리·삭제', () => {
   });
 
   /*
-   * 무엇을 했는지가 이력이다. 지우면 "안 했다" 와 구분되지 않는다.
+   * What was done is the history. Deleting it becomes indistinguishable from "not done".
    */
   it('처리된 지시는 지우지 못한다', async () => {
     const prisma = buildPrisma({
@@ -250,7 +250,7 @@ describe('TracesService — 처리·삭제', () => {
 });
 
 describe('TracesService — 날짜 처리', () => {
-  // @db.Date 컬럼은 UTC 자정 기준이다. 로컬 시각으로 만들면 하루 밀린다.
+  // @db.Date columns are UTC midnight. Built from local time they shift by a day.
   it('날짜를 UTC 자정으로 맞춘다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);

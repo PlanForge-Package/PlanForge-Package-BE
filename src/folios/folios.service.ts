@@ -15,15 +15,15 @@ import type {
 import { mirrorFolios, toOperaPostingType } from './folio-mirror';
 
 /**
- * 폴리오 — 손님의 계산서.
+ * Folio — the guest's bill.
  *
- * 회계 원장은 OPERA 가 원천이다. 창구를 열고 거래를 다는 일은 모두 Core 를 통해
- * OPERA 에 맡기고, 돌아온 결과를 로컬에 옮겨 적는다. 잔액도 저쪽이 계산한 값을
- * 그대로 쓴다 — 두 시스템이 각자 세면 언젠가 갈리고, 회계 데이터에서 그건 어느
- * 쪽이 맞는지 판단할 근거가 없다는 뜻이다.
+ * The ledger's source is OPERA. Opening windows and posting transactions are all
+ * delegated to OPERA through Core, and the result is copied locally. The balance
+ * is theirs as well — two systems counting separately eventually disagree, and in
+ * accounting data there is no way to tell which side is right.
  *
- * 로컬에서 먼저 막는 것은 우리가 더 잘 아는 조건뿐이다. 결제가 만든 거래인지,
- * 어느 POS 아웃렛이 달았는지는 OPERA 가 모른다.
+ * Only conditions we know better are checked locally. OPERA does not know whether
+ * a posting came from a payment or which POS outlet raised it.
  */
 @Injectable()
 export class FoliosService {
@@ -42,7 +42,7 @@ export class FoliosService {
     });
   }
 
-  /** 분할 정산을 위해 폴리오 윈도를 추가로 연다. */
+  /** Opens an extra folio window for a split settlement. */
   async openWindow(reservationId: string, dto: OpenFolioDto, user: AuthUser) {
     const { reservation, operaId } = await this.load(reservationId, user);
 
@@ -67,16 +67,16 @@ export class FoliosService {
   }
 
   /**
-   * 보증금을 받는다.
+   * Takes a deposit.
    *
-   * 도착 전이라 청구는 없지만 그 돈은 이미 우리에게 있다. 폴리오에 결제로 올려
-   * 두지 않으면 체크인 때 손님이 두 번 내거나, 남은 돈을 돌려주지 못한다.
+   * There is no charge yet before arrival, but the money is already ours. Without
+   * posting it as a payment, the guest pays twice at check-in or is never refunded.
    *
-   * 같은 전표 번호로 다시 들어오면 OPERA 가 막는다 — 보증금을 두 번 받으면 손님
-   * 돈이 두 번 나간다.
+   * The same check number coming again is blocked by OPERA — taking a deposit twice
+   * takes the guest's money twice.
    *
-   * 카드 승인은 아직 이 경로를 타지 않는다. PG 사가 정해지면 폴리오 결제와 같은
-   * 드라이버를 거치도록 맞춰야 한다.
+   * Card authorisation does not use this path yet. Once a PSP is chosen it has to
+   * go through the same driver as folio payments.
    */
   async recordDeposit(reservationId: string, dto: RecordDepositDto, user: AuthUser) {
     const { reservation, operaId } = await this.load(reservationId, user);
@@ -103,7 +103,7 @@ export class FoliosService {
     });
   }
 
-  /** 거래를 등록한다. 잔액은 OPERA 가 확정한 값으로 갱신된다. */
+  /** Posts a transaction. The balance is refreshed from OPERA's confirmed value. */
   async addPosting(reservationId: string, window: number, dto: CreatePostingDto, user: AuthUser) {
     const { reservation, operaId } = await this.load(reservationId, user);
 
@@ -132,11 +132,11 @@ export class FoliosService {
   }
 
   /**
-   * 거래를 다른 창구로 옮긴다.
+   * Moves a transaction to another window.
    *
-   * 투숙 중에 "객실료는 회사가 낸다" 가 뒤늦게 정해지는 일이 흔하다. 이미 붙은
-   * 요금을 지웠다가 다시 다는 것은 회계상 두 번의 사고가 되므로, 원본을 그대로
-   * 옮기고 어디서 왔는지를 남긴다.
+   * "The company pays the room" is often settled late in the stay. Deleting and
+   * re-posting a charge counts as two accounting incidents, so the original is
+   * moved as is and where it came from is recorded.
    */
   async transferPosting(
     reservationId: string,
@@ -155,11 +155,11 @@ export class FoliosService {
     }
 
     /*
-     * 결제가 만든 포스팅은 옮기지 않는다.
+     * Postings created by a payment are not moved.
      *
-     * Payment 레코드가 폴리오를 가리키고 있어, 포스팅만 옮기면 결제는 여기,
-     * 그 흔적은 저기에 남는다. 환불·승인취소가 어느 폴리오를 되돌려야 할지
-     * 알 수 없게 된다. OPERA 는 이 관계를 모르므로 여기서 막는다.
+     * The Payment record points at a folio, so moving only the posting leaves the
+     * payment here and its trace there. A refund or void would not know which folio
+     * to reverse. OPERA does not know this relation, so it is blocked here.
      */
     if (posting.paymentId) {
       throw new BadRequestException(
@@ -194,7 +194,7 @@ export class FoliosService {
     });
   }
 
-  /** 예약의 라우팅 지시. 이 지시는 우리 편성이므로 OPERA 에 보내지 않는다. */
+  /** Routing instructions for a reservation. Ours to arrange, so not sent to OPERA. */
   async listRoutings(reservationId: string, user: AuthUser) {
     await this.load(reservationId, user);
 
@@ -206,15 +206,15 @@ export class FoliosService {
   }
 
   /**
-   * 라우팅 지시를 걸거나 바꾼다.
+   * Sets or changes a routing instruction.
    *
-   * 같은 거래 코드에 두 개를 두면 어느 쪽이 이기는지 알 수 없으므로 하나만
-   * 둔다. 다시 걸면 목적지가 바뀐다.
+   * Two instructions on one transaction code leave no way to know which wins, so
+   * there is only ever one. Setting it again changes the destination.
    */
   async setRouting(reservationId: string, dto: SetRoutingDto, user: AuthUser) {
     await this.load(reservationId, user);
 
-    // 없는 창구로 보내면 요금이 붙을 때마다 실패한다. 지금 막는다.
+    // Sending to a missing window fails on every charge. Blocked now.
     const target = await this.prisma.folio.findUnique({
       where: { reservationId_window: { reservationId, window: dto.targetWindow } },
     });
@@ -253,8 +253,8 @@ export class FoliosService {
   }
 
   /**
-   * 폴리오는 예약에 매달려 있으므로 예약의 호텔로 접근을 판단한다.
-   * 예약 ID 만 알면 닿는 경로라 여기서도 반드시 확인한다.
+   * A folio hangs off a reservation, so access is judged by the reservation's hotel.
+   * The path is reachable from a reservation id alone, so it is always checked here.
    */
   private async load(reservationId: string, user: AuthUser) {
     const reservation = await this.prisma.reservation.findUnique({
@@ -275,7 +275,7 @@ export class FoliosService {
     return { reservation, operaId: reservation.operaReservationId };
   }
 
-  /** 위임 한 번을 SyncLog 로 감싼다. 실패하면 무엇을 보내다 실패했는지 남는다. */
+  /** Wraps one delegation in a SyncLog, so a failure records what we were sending. */
   private async delegate<T>(
     reservationId: string,
     payload: Record<string, unknown>,

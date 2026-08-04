@@ -7,7 +7,7 @@ import { CoreClient } from '../core/core.client';
 import { PAYMENT_DRIVER, PaymentError } from './payment.driver';
 import { PaymentsService } from './payments.service';
 
-// 미러링은 folio-mirror.spec.ts 가 따로 본다. 여기서는 위임과 가드만 본다.
+// Mirroring is covered by folio-mirror.spec.ts. Here only delegation and guards.
 jest.mock('../folios/folio-mirror', () => ({
   ...jest.requireActual('../folios/folio-mirror'),
   mirrorFolios: jest.fn().mockResolvedValue(undefined),
@@ -77,7 +77,7 @@ function buildPrisma(overrides: Record<string, unknown> = {}) {
         window: 1,
       }),
     },
-    // 근무조를 열지 않고도 수납할 수 있다. 그 수납은 어느 조에도 붙지 않는다.
+    // Money can be taken without opening a shift. Such a receipt belongs to no shift.
     cashierShift: { findFirst: jest.fn().mockResolvedValue(null) },
     payment: {
       findUnique: jest.fn().mockResolvedValue(null),
@@ -149,11 +149,11 @@ describe('PaymentsService — 승인', () => {
       expect.objectContaining({ paymentToken: 'tok_ok_123', amount: '340000.00' }),
     );
     expect(result.status).toBe(PaymentStatus.AUTHORIZED);
-    // 승인만으로 잔액을 줄이면 매입에 실패했을 때 받지도 않은 돈이 받은 것으로 남는다.
+    // Reducing the balance on the authorisation leaves money we never took recorded as taken.
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
-  // 재전송되면 같은 카드로 두 번 긁힌다. 손님 돈이 두 번 나가는 일은 되돌리기 어렵다.
+  // A resend charges the same card twice, and money leaving a guest twice is hard to undo.
   it('같은 멱등키는 새로 긁지 않고 기존 건을 돌려준다', async () => {
     const prisma = buildPrisma({ payment: { findUnique: jest.fn().mockResolvedValue(payment()) } });
     const driver = buildDriver();
@@ -166,8 +166,8 @@ describe('PaymentsService — 승인', () => {
   });
 
   /*
-   * 현금은 사람이 받아 확인한 돈이다. 두 단계로 나누면 프런트가 매입을 잊고,
-   * 받은 돈이 폴리오에 없는 상태가 된다.
+   * Cash is money a person took and checked. Split into two steps, the front desk
+   * forgets to capture and the money taken is missing from the folio.
    */
   it('현금은 곧바로 매입 상태로 폴리오에 올린다', async () => {
     const prisma = buildPrisma();
@@ -184,13 +184,13 @@ describe('PaymentsService — 승인', () => {
 
     expect(driver.authorize).not.toHaveBeenCalled();
     expect(result.status).toBe(PaymentStatus.CAPTURED);
-    // 부호는 OPERA 가 종류로 정한다. 우리는 양수로 보낸다.
+    // OPERA sets the sign from the type. We send a positive amount.
     expect(core.createPosting.mock.calls[0][2]).toMatchObject({ type: 'Payment', amount: 340000 });
   });
 
   /*
-   * 조를 열지 않고도 수납할 수 있게 둔다 — 손님을 세워 두고 "먼저 근무조를
-   * 여세요" 라고 할 수는 없다. 대신 그 수납은 마감 집계에서 빠진다.
+   * Taking money without opening a shift is allowed — we cannot keep a guest waiting
+   * to "open a shift first". Such a receipt falls outside the closing totals.
    */
   it('열린 근무조가 있으면 그 조에 붙인다', async () => {
     const prisma = buildPrisma();
@@ -230,7 +230,7 @@ describe('PaymentsService — 승인', () => {
     ).rejects.toThrow(/결제 토큰/);
   });
 
-  // 같은 카드로 반복 시도했는지 나중에 확인해야 한다.
+  // Repeated attempts on one card need to be traceable later.
   it('거절은 실패 이력을 남긴다', async () => {
     const prisma = buildPrisma();
     const driver = buildDriver();
@@ -242,8 +242,8 @@ describe('PaymentsService — 승인', () => {
   });
 
   /*
-   * 멱등키를 소진해 버리면 같은 키로 다시 시도할 수 없고, 실제로 승인이 났는지
-   * 확인할 방법도 막힌다.
+   * Burning the idempotency key blocks retrying with it and also blocks finding out
+   * whether the authorisation actually went through.
    */
   it('결과 불명은 이력을 남기지 않고 확인을 요구한다', async () => {
     const prisma = buildPrisma();
@@ -326,7 +326,7 @@ describe('PaymentsService — 매입', () => {
     await expect(service.capture('pay-1', {}, ACTOR)).rejects.toBeInstanceOf(ConflictException);
   });
 
-  // PG 에서 실패했는데 로컬만 매입으로 바꾸면 받지 않은 돈이 받은 것으로 남는다.
+  // Marking capture locally after a PSP failure records money we never took as taken.
   it('PG 매입이 실패하면 로컬도 바꾸지 않는다', async () => {
     const prisma = buildPrisma({ payment: { findUnique: jest.fn().mockResolvedValue(payment()) } });
     const driver = buildDriver();
@@ -363,7 +363,7 @@ describe('PaymentsService — 승인 취소·환불', () => {
     await expect(service.void('pay-1', ACTOR)).rejects.toThrow(/환불로 처리/);
   });
 
-  // 원래 결제를 지우면 명세서에서 결제가 통째로 사라져 무엇이 정정됐는지 알 수 없다.
+  // Deleting the original removes the payment from the bill and hides the correction.
   it('환불은 반대 부호 포스팅을 하나 더 단다', async () => {
     const prisma = buildPrisma({
       payment: {
@@ -378,7 +378,7 @@ describe('PaymentsService — 승인 취소·환불', () => {
 
     expect(driver.refund).toHaveBeenCalledWith('MOCKTXN-AAA', '50000.00');
     const posting = core.createPosting.mock.calls[0][2];
-    // 결제가 음수로 올라가 있으므로 환불은 Adjustment 의 기본(양수) 방향이다.
+    // Payments post negative, so a refund takes the Adjustment default (positive).
     expect(posting).toMatchObject({ type: 'Adjustment', amount: 50000 });
     expect(posting.description).toContain('[환불]');
   });
@@ -404,8 +404,8 @@ describe('PaymentsService — 승인 취소·환불', () => {
   });
 
   /*
-   * 현금은 PG 를 거치지 않았다. 부르면 PG 가 모르는 거래라며 거절해 현금 환불
-   * 자체가 막힌다.
+   * Cash never went through the PSP. Called anyway, the PSP rejects an unknown
+   * transaction and blocks the cash refund outright.
    */
   it('현금 환불은 PG 를 부르지 않는다', async () => {
     const prisma = buildPrisma({
@@ -426,7 +426,7 @@ describe('PaymentsService — 승인 취소·환불', () => {
     await service.refund('pay-1', { amount: 10000 }, ACTOR);
 
     expect(driver.refund).not.toHaveBeenCalled();
-    // 기록은 그대로 맞춘다. 실제 돈은 프런트가 손으로 내준다.
+    // The record is matched here. The front desk hands the money over.
     expect(core.createPosting.mock.calls[0][2]).toMatchObject({ amount: 10000 });
   });
 

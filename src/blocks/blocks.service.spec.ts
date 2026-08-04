@@ -123,7 +123,7 @@ describe('BlocksService — 생성', () => {
     expect(upsert.where).toEqual({ operaBlockId: 'BLK-501' });
   });
 
-  // 코드는 예약할 때 그대로 입력하는 값이다. 대소문자가 섞이면 같은 블록을 못 찾는다.
+  // The code is typed verbatim when booking. Mixed case makes the block unfindable.
   it('블록 코드와 객실 타입 코드를 대문자로 맞춰 보낸다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -136,7 +136,7 @@ describe('BlocksService — 생성', () => {
     expect(sent.allotments[0].roomTypeCode).toBe('STDT');
   });
 
-  // 우리가 보낸 값이 아니라 OPERA 가 확정한 값을 적어야 두 쪽이 갈리지 않는다.
+  // Writing OPERA's confirmed value, not the one we sent, keeps the two in step.
   it('로컬에는 OPERA 가 돌려준 상태와 합계를 적는다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -165,7 +165,7 @@ describe('BlocksService — 생성', () => {
     expect(core.createBlock).not.toHaveBeenCalled();
   });
 
-  // 컷오프가 시작일 뒤면 풀 시점이 이미 지나 아무 효과가 없다.
+  // A cutoff after the start date has already passed its release point and does nothing.
   it('컷오프가 시작일보다 뒤면 거절한다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -193,7 +193,7 @@ describe('BlocksService — 생성', () => {
 });
 
 describe('BlocksService — 미러링', () => {
-  // OPERA 가 일자나 객실 타입을 줄였을 때 남은 행을 지우지 않으면 유령 할당이 남는다.
+  // When OPERA drops a date or room type, leftover rows leave phantom allotments.
   it('할당은 부분 갱신하지 않고 통째로 다시 쓴다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -230,7 +230,7 @@ describe('BlocksService — 수정·룸리스트', () => {
     await expect(service.get('nope', HQ)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  // OPERA 에 없는 블록을 로컬만 바꾸면 두 쪽이 갈린다.
+  // Changing a block OPERA does not have locally splits the two sides.
   it('OPERA 와 연결되지 않은 블록은 수정할 수 없다', async () => {
     const prisma = buildPrisma();
     prisma.block.findUnique.mockResolvedValue({ ...LOCAL_BLOCK, operaBlockId: null });

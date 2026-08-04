@@ -12,8 +12,8 @@ async function bootstrap(): Promise<void> {
 
   app.use(helmet());
 
-  // 리버스 프록시 뒤에서 뜨면 클라이언트 IP 가 전부 프록시 주소로 보인다.
-  // 요청 제한이 IP 로 세는 이상, 이걸 켜지 않으면 한 사람이 전체를 잠글 수 있다.
+  // Behind a reverse proxy, every client IP looks like the proxy's address.
+  // Since rate limiting counts by IP, without this one person can lock everyone out.
   if (process.env.TRUST_PROXY === 'true') {
     app.set('trust proxy', 1);
   }
@@ -27,7 +27,7 @@ async function bootstrap(): Promise<void> {
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
   );
 
-  // 운영에서는 API 스펙을 공개하지 않는다. 엔드포인트 목록은 공격면을 넓힌다.
+  // The API spec is not published in production. A list of endpoints widens the attack surface.
   if (!isProduction || process.env.ENABLE_SWAGGER === 'true') {
     const config = new DocumentBuilder()
       .setTitle('PlanForge BE')
@@ -38,7 +38,7 @@ async function bootstrap(): Promise<void> {
     SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
   }
 
-  // 종료 신호를 받으면 진행 중인 요청을 마무리하고 DB 연결을 닫는다.
+  // On a shutdown signal, in-flight requests finish and the DB connection closes.
   app.enableShutdownHooks();
 
   const port = Number(process.env.PORT ?? 3001);

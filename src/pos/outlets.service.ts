@@ -13,15 +13,15 @@ import { resolvePropertyScope } from '../properties/property-scope';
 import { POS_KEY_PREFIX, POS_KEY_PREFIX_LENGTH } from './pos-key.guard';
 import type { CreateOutletDto, UpdateOutletDto } from './dto/pos.dto';
 
-/** 키에 담는 무작위 바이트 수. 32바이트면 추측이 현실적으로 불가능하다. */
+/** Random bytes in a key. At 32 bytes, guessing is not realistically possible. */
 const KEY_BYTES = 32;
 
 /**
- * POS 아웃렛 관리.
+ * POS outlet management.
  *
- * 키는 발급 순간에만 평문으로 존재한다. 저장은 bcrypt 해시로만 하므로 다시
- * 보여 줄 수 없다 — 잃어버리면 재발급이다. 다시 볼 수 있게 만들면 데이터베이스
- * 유출이 곧 모든 단말의 탈취가 된다.
+ * A key exists in plaintext only at the moment it is issued. It is stored as a
+ * bcrypt hash and cannot be shown again — a lost key is reissued. Making it
+ * readable would turn a database leak into the theft of every terminal.
  */
 @Injectable()
 export class OutletsService {
@@ -38,7 +38,7 @@ export class OutletsService {
     return { items: items.map(toPublicOutlet) };
   }
 
-  /** 발급한 평문 키를 딱 한 번 돌려준다. 화면이 그 자리에서 보여 줘야 한다. */
+  /** Returns the plaintext key exactly once. The screen has to show it there and then. */
   async create(dto: CreateOutletDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, dto.propertyId);
     if (!propertyId) {
@@ -88,10 +88,10 @@ export class OutletsService {
   }
 
   /**
-   * 키 재발급.
+   * Key reissue.
    *
-   * 이전 키는 즉시 통하지 않는다. 유출이 의심될 때 쓰는 기능이라 유예를 두면
-   * 의미가 없다 — 단말은 새 키로 다시 설정해야 한다.
+   * The previous key stops working immediately. It is used when a leak is suspected,
+   * so a grace period would defeat it — the terminal has to be set up with the new key.
    */
   async rotateKey(id: string, user: AuthUser) {
     const outlet = await this.load(id, user);
@@ -110,13 +110,13 @@ export class OutletsService {
     if (!outlet) {
       throw new NotFoundException(`아웃렛을 찾을 수 없습니다: ${id}`);
     }
-    // 다른 호텔의 단말 키를 재발급하면 그 호텔의 매장이 멈춘다.
+    // Reissuing another hotel's terminal key stops that hotel's outlets.
     resolvePropertyScope(user, outlet.propertyId);
     return outlet;
   }
 }
 
-/** 해시는 절대 내보내지 않는다. 앞자리만 있으면 어느 키인지 알아볼 수 있다. */
+/** The hash never leaves. The prefix alone is enough to tell which key it is. */
 function toPublicOutlet(outlet: PosOutlet) {
   return {
     id: outlet.id,

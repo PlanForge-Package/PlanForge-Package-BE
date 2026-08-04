@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
-// 미러링 자체는 folio-mirror.spec.ts 가 따로 본다.
+// Mirroring itself is covered separately by folio-mirror.spec.ts.
 jest.mock('../folios/folio-mirror', () => ({
   mirrorFolios: jest.fn().mockResolvedValue(undefined),
 }));
@@ -19,7 +19,7 @@ const PROPERTY = {
   currency: 'KRW',
 };
 
-/** 소속 없는 본사 계정. 호텔 범위 검사는 property-scope.spec.ts 가 따로 다룬다. */
+/** Head-office account with no property. Hotel scoping is covered by property-scope.spec.ts. */
 const HQ: AuthUser = {
   id: 'u1',
   sub: 'u1',
@@ -48,11 +48,11 @@ const OPERA_RESULT: CoreReservation = {
 function buildPrisma() {
   return {
     property: { findUnique: jest.fn().mockResolvedValue(PROPERTY) },
-    // 취소 위약금이 붙으면 폴리오를 한 트랜잭션에서 옮겨 적는다.
+    // A cancellation penalty mirrors the folio within one transaction.
     $transaction: jest.fn((cb: (client: unknown) => unknown) => cb({})),
     reservation: {
       findUnique: jest.fn(),
-      // 공유 해제가 혼자 남은 상대의 표시를 푼다.
+      // Unshare clears the flag on the partner left alone.
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockResolvedValue({}),
       upsert: jest.fn().mockImplementation(({ create, update }) => ({
@@ -108,7 +108,7 @@ function buildCore() {
     setGuarantee: jest
       .fn()
       .mockResolvedValue({ ...OPERA_RESULT, guaranteeCode: 'CREDITCARD' as const }),
-    // 위약금이 붙으면 폴리오를 다시 읽어 옮겨 적는다.
+    // A penalty means the folio is re-read and mirrored.
     listFolios: jest.fn().mockResolvedValue({ reservationId: 'OPERA-2001', folios: [] }),
   };
 }
@@ -153,8 +153,8 @@ describe('BookingService — 생성', () => {
   });
 
   /*
-   * 보내지 않으면 OPERA 가 매번 새 프로필을 만든다. 재방문 손님마다 프로필이
-   * 늘어나고 투숙 이력이 흩어져 결국 손으로 병합해야 한다.
+   * Without it OPERA creates a new profile every time. Each returning guest gains
+   * another, stay history scatters, and someone ends up merging by hand.
    */
   it('이미 아는 이메일이면 그 OPERA 프로필 ID 를 함께 보낸다', async () => {
     const prisma = buildPrisma();
@@ -179,7 +179,7 @@ describe('BookingService — 생성', () => {
     expect(core.createReservation.mock.calls[0][0].guest.profileId).toBeUndefined();
   });
 
-  // 병합된 프로필에 붙이면 방금 정리한 중복이 되살아난다.
+  // Attaching a merged profile revives the duplicate just cleaned up.
   it('병합된 프로필은 후보에서 제외한다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma, buildCore());
@@ -194,13 +194,13 @@ describe('BookingService — 생성', () => {
     );
   });
 
-  // 로컬 값은 캐시다. 우리가 보낸 값이 아니라 OPERA 가 확정한 값을 써야 갈리지 않는다.
+  // Local values are a cache. Writing OPERA's confirmed value, not ours, keeps them in step.
   it('보낸 값이 아니라 OPERA 가 확정한 값을 저장한다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
     core.createReservation.mockResolvedValue({
       ...OPERA_RESULT,
-      roomTypeCode: 'SUIT', // OPERA 가 다른 타입으로 확정
+      roomTypeCode: 'SUIT', // OPERA confirmed a different type
       totalAmount: 800000,
     });
     const service = await buildService(prisma, core);
@@ -282,7 +282,7 @@ describe('BookingService — 수정·취소', () => {
     expect(prisma.reservation.upsert.mock.calls[0][0].update.status).toBe('CANCELLED');
   });
 
-  // OPERA 에 없는 예약을 로컬에서만 고치면 두 쪽이 영구히 갈린다.
+  // Fixing a reservation OPERA does not have splits the two sides permanently.
   it('OPERA 와 연결되지 않은 예약은 수정할 수 없다', async () => {
     const prisma = buildPrisma();
     prisma.reservation.findUnique.mockResolvedValue({
@@ -371,8 +371,8 @@ describe('BookingService — 대기 확정', () => {
   });
 
   /*
-   * 그 사이 다른 대기 건이 먼저 확정됐을 수 있다. 그 판단은 OPERA 가 하고,
-   * 거절은 그대로 올린다.
+   * Another waitlisted booking may have been confirmed in between. OPERA decides
+   * that, and its rejection is surfaced as is.
    */
   it('OPERA 가 거절하면 그대로 올린다', async () => {
     const prisma = buildPrisma();
@@ -387,7 +387,7 @@ describe('BookingService — 대기 확정', () => {
     );
   });
 
-  // 매진일 때 손님을 그냥 돌려보내지 않으려면 대기로 받는다.
+  // Rather than turning a guest away when sold out, take them on the waitlist.
   it('생성 시 대기 여부를 그대로 넘긴다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -429,7 +429,7 @@ describe('BookingService — 객실 공유', () => {
     expect(result).toHaveLength(2);
   });
 
-  // 호텔이 다르면 같은 방을 쓸 수 없다. 외부 호출 전에 막는다.
+  // Different hotels cannot share a room. Blocked before the external call.
   it('다른 호텔의 예약과는 묶지 않는다', async () => {
     const prisma = buildPrisma();
     prisma.reservation.findUnique
@@ -443,8 +443,8 @@ describe('BookingService — 객실 공유', () => {
   });
 
   /*
-   * 겹치는 기간·같은 객실 타입인지는 OPERA 가 본다. 재고와 객실 배정을 아는
-   * 쪽이 판단해야 한다.
+   * Overlapping dates and matching room types are OPERA's call. The side that
+   * knows inventory and room assignment has to decide.
    */
   it('OPERA 가 거절하면 그대로 올린다', async () => {
     const prisma = buildPrisma();
@@ -469,8 +469,8 @@ describe('BookingService — 객실 공유', () => {
   });
 
   /*
-   * OPERA 는 이미 풀었지만 그 예약은 응답에 실려 오지 않는다. 사본에 남겨 두면
-   * 공유가 아닌데 공유로 보인다.
+   * OPERA already cleared it, but that reservation is not in the response. Left in
+   * our copy, it would look shared when it is not.
    */
   it('혼자 남은 상대의 표시도 푼다', async () => {
     const prisma = buildPrisma();
@@ -501,7 +501,7 @@ describe('BookingService — 객실 공유', () => {
 });
 
 describe('BookingService — 보증·취소 조건', () => {
-  /** 이미 OPERA 에 연결된 예약. 보증·취소 조건은 연결이 있어야 물을 수 있다. */
+  /** A reservation already linked to OPERA. Guarantee and cancellation terms need the link. */
   function linkedPrisma() {
     const prisma = buildPrisma();
     prisma.reservation.findUnique.mockResolvedValue({
@@ -525,7 +525,7 @@ describe('BookingService — 보증·취소 조건', () => {
     expect(result.cancellation.withinFreeWindow).toBe(true);
   });
 
-  // 화면은 로컬 id 로 다시 부른다. OPERA id 를 돌려주면 링크가 깨진다.
+  // The screen calls back with the local id. Returning the OPERA id breaks the link.
   it('로컬 예약 id 를 돌려준다', async () => {
     const prisma = linkedPrisma();
     const core = buildCore();
@@ -546,7 +546,7 @@ describe('BookingService — 보증·취소 조건', () => {
     expect(prisma.reservation.upsert.mock.calls[0][0].update.guaranteeCode).toBe('CREDITCARD');
   });
 
-  // 실패를 남기지 않으면 왜 안 바뀌었는지 나중에 알 수 없다.
+  // Without recording the failure there is no telling later why nothing changed.
   it('보증 방식 변경 실패도 기록한다', async () => {
     const prisma = linkedPrisma();
     const core = buildCore();
@@ -573,7 +573,7 @@ describe('BookingService — 보증·취소 조건', () => {
 
     const saved = prisma.reservation.upsert.mock.calls[0][0].update;
     expect(saved.cancellationPenalty.toString()).toBe('120000');
-    // 옮겨 적지 않으면 우리 화면에 없는 청구가 OPERA 에만 남는다.
+    // Without mirroring, a charge exists only in OPERA and never on our screen.
     expect(core.listFolios).toHaveBeenCalledWith('OPERA-2001');
   });
 });

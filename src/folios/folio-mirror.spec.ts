@@ -62,7 +62,7 @@ describe('folio-mirror — 거래 종류 매핑', () => {
 });
 
 describe('folio-mirror', () => {
-  // 두 시스템이 각자 세면 언젠가 값이 갈린다. 저쪽 잔액을 그대로 쓴다.
+  // Two systems counting separately eventually disagree. Their balance is used as is.
   it('잔액을 다시 계산하지 않고 OPERA 값을 그대로 쓴다', async () => {
     const tx = buildTx();
     await mirrorFolios(tx as never, 'res-1', 'KRW', [folio({ balance: 123456 })]);
@@ -89,8 +89,8 @@ describe('folio-mirror', () => {
   });
 
   /*
-   * 어느 POS 아웃렛이 달았는지, 어느 결제가 만들었는지는 OPERA 가 모른다.
-   * 갱신할 때 건드리면 사본에서만 아는 정보가 사라진다.
+   * OPERA does not know which POS outlet posted it or which payment created it.
+   * Touching those on update loses information only the copy holds.
    */
   it('갱신에서는 아웃렛·결제 연결을 건드리지 않는다', async () => {
     const tx = buildTx();
@@ -102,8 +102,8 @@ describe('folio-mirror', () => {
   });
 
   /*
-   * 일부만 갱신하면 사본이 OPERA 와 다른 값을 들고 있게 된다. 거래 코드가 예전
-   * 것으로 남으면 그 금액이 마감에서 엉뚱한 매출로 분개된다.
+   * Updating only part leaves the copy holding values OPERA does not have. A stale
+   * transaction code posts that amount to the wrong revenue at close.
    */
   it('갱신에서 거래 코드와 종류까지 다시 쓴다', async () => {
     const tx = buildTx();
@@ -190,8 +190,8 @@ describe('folio-mirror', () => {
   });
 
   /*
-   * 우리가 만들었다가 OPERA 가 받지 않은 행이 남으면 잔액과 내역이 어긋난다.
-   * 로컬 원장을 OPERA 에 맞춘다.
+   * A row we created that OPERA never accepted would skew the balance and the
+   * detail. The local ledger follows OPERA.
    */
   it('OPERA 에 없는 거래는 지운다', async () => {
     const tx = buildTx();
@@ -229,8 +229,8 @@ describe('folio-mirror', () => {
     expect(create.amount.toString()).toBe('240000');
   });
   /*
-   * 사본의 고유 제약은 정합성 장치이지 업무 규칙이 아니다. 여기서 걸려 예외가
-   * 나면 이미 돈이 오간 뒤에 500 이 떨어진다.
+   * The copy's unique constraint is a consistency device, not a business rule. An
+   * exception here would raise a 500 after money already moved.
    */
   it('같은 식별자를 든 낡은 행에서 먼저 떼어 낸다', async () => {
     const tx = buildTx();

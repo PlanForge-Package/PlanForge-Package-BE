@@ -33,7 +33,7 @@ export class AuthController {
     return this.auth.me(user.id);
   }
 
-  // 역할과 무관하게 누구나 자기 비밀번호는 바꿀 수 있어야 한다.
+  // Anyone, whatever their role, must be able to change their own password.
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()

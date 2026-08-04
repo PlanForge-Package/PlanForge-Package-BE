@@ -8,10 +8,10 @@ import { CreateTraceDto, ListTracesDto } from './dto/traces.dto';
 import { TracesService } from './traces.service';
 
 /**
- * 트레이스 — 예약에 붙는 부서별 지시.
+ * Trace — a departmental instruction attached to a reservation.
  *
- * 조회와 처리 완료는 전 역할이 한다. 하우스키핑도 자기 부서 지시를 보고 끝났다고
- * 표시해야 한다. 지시를 새로 거는 것은 프론트데스크와 지배인이 한다.
+ * Reading and completing are open to every role; housekeeping has to see and close
+ * its own. Raising a new instruction is for the front desk and managers.
  */
 @ApiTags('traces')
 @ApiBearerAuth()

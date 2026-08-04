@@ -46,11 +46,11 @@ import type {
 type Query = Record<string, string | number | boolean | undefined>;
 
 /**
- * Core(API Server) HTTP 클라이언트.
+ * HTTP client for Core (the API server).
  *
- * Core 는 이미 OPERA 인증·토큰 캐시·응답 정규화를 처리하므로 BE 는 얇게 호출만 한다.
- * 재시도는 하지 않는다 — Core 가 401 재시도를 담당하고, 그 밖의 실패는 상위에서
- * SyncLog 에 남긴 뒤 배치로 다시 시도하는 편이 예약 같은 도메인에 안전하다.
+ * Core already handles OPERA auth, token caching and response normalisation, so BE
+ * calls it thinly. No retries here — Core owns the 401 retry, and for a domain like
+ * reservations it is safer to log other failures to SyncLog and retry by batch.
  */
 @Injectable()
 export class CoreClient {
@@ -84,7 +84,7 @@ export class CoreClient {
     return this.request<CoreRateResponse>('/v1/rates', { ...params });
   }
 
-  // --- 요금 코드 설정 --------------------------------------------------------
+  // --- Rate code setup -------------------------------------------------------
 
   listRatePlans(hotelId?: string, status?: string): Promise<CoreRatePlanListResponse> {
     return this.request<CoreRatePlanListResponse>('/v1/rate-plans', { hotelId, status });
@@ -131,7 +131,7 @@ export class CoreClient {
     );
   }
 
-  // --- 거래 코드 ------------------------------------------------------------
+  // --- Transaction codes -----------------------------------------------------
 
   listTransactionCodes(
     hotelId?: string,
@@ -188,14 +188,14 @@ export class CoreClient {
     return this.request<CoreBlock>(`/v1/blocks/${encodeURIComponent(blockId)}`);
   }
 
-  /** 룸리스트 — 이 블록에서 빠져나간 예약. 블록 코드로 거르는 것은 Core 가 한다. */
+  /** Rooming list — reservations picked up from this block. Core filters by block code. */
   listBlockReservations(blockId: string): Promise<CoreReservationListResponse> {
     return this.request<CoreReservationListResponse>(
       `/v1/blocks/${encodeURIComponent(blockId)}/reservations`,
     );
   }
 
-  // --- 쓰기. OPERA 가 재고·요금·확인 번호를 판단한다 --------------------------
+  // --- Writes. OPERA decides inventory, rates and confirmation numbers ---------
 
   createBlock(input: CoreCreateBlockInput): Promise<CoreBlock> {
     return this.request<CoreBlock>('/v1/blocks', undefined, { method: 'POST', json: input });
@@ -237,7 +237,7 @@ export class CoreClient {
     );
   }
 
-  // --- 폴리오. 회계 원장은 OPERA 가 원천이고 잔액도 저쪽이 계산한다 ---------
+  // --- Folios. OPERA owns the ledger and computes the balance ----------------
 
   listFolios(reservationId: string): Promise<CoreFolioListResponse> {
     return this.request<CoreFolioListResponse>(
@@ -331,9 +331,9 @@ export class CoreClient {
   }
 
   /**
-   * 프로필 병합.
+   * Profile merge.
    *
-   * 로컬에서만 합치면 OPERA 에는 여전히 둘이고, 다음 동기화가 지운 쪽을 되살린다.
+   * Merged locally only, OPERA still has two and the next sync revives the removed one.
    */
   mergeProfile(profileId: string, targetProfileId: string): Promise<CoreProfile> {
     return this.request<CoreProfile>(
@@ -344,10 +344,10 @@ export class CoreClient {
   }
 
   /**
-   * 체크인.
+   * Check-in.
    *
-   * 객실 번호를 함께 보낸다. 어느 방에 들어갔는지를 OPERA 가 모르면 그 방을
-   * 여전히 빈 방으로 보고 다른 예약에 배정한다.
+   * The room number goes with it. Without knowing which room the guest entered,
+   * OPERA still sees it free and assigns it to another reservation.
    */
   checkInReservation(
     reservationId: string,
@@ -372,10 +372,10 @@ export class CoreClient {
   }
 
   /**
-   * 대기 확정.
+   * Waitlist confirmation.
    *
-   * 자리가 났는지는 확정하는 순간 OPERA 가 세어 본다. 우리가 미리 판단하면
-   * 그 사이 다른 대기 건이 먼저 확정된 경우를 놓친다.
+   * OPERA counts availability at the moment of confirming. Deciding ahead of it
+   * misses the case where another waitlisted booking was confirmed in between.
    */
   confirmWaitlist(reservationId: string, hotelId?: string): Promise<CoreReservation> {
     return this.request<CoreReservation>(
@@ -385,7 +385,7 @@ export class CoreClient {
     );
   }
 
-  /** 객실 공유. 두 예약이 한 방을 쓰고 계산은 따로 한다. */
+  /** Room share. Two reservations use one room and settle separately. */
   shareReservation(
     reservationId: string,
     input: { hotelId?: string; withReservationId: string },
@@ -421,7 +421,7 @@ export class CoreClient {
     );
   }
 
-  // --- 취소 조건 · 보증금 · 보증 방식 ----------------------------------------
+  // --- Cancellation terms, deposit and guarantee ------------------------------
 
   getReservationPolicies(
     reservationId: string,

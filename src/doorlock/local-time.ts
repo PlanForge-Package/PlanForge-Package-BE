@@ -1,13 +1,13 @@
 /**
- * 호텔 현지 시각을 UTC 로 바꾼다.
+ * Converts the hotel's local time to UTC.
  *
- * 키 유효 기간은 반드시 현지 시각 기준이어야 한다. UTC 로 "출발일 12시" 를
- * 잡으면 서울에서는 밤 9시가 되어, 체크아웃한 손님의 카드가 반나절 더 살아
- * 있는다. 그 방에 다음 손님이 들어온 뒤까지 열린다.
+ * Key validity has to be based on local time. Setting "noon on the departure day"
+ * in UTC makes it 9pm in Seoul, so a departed guest's card lives half a day longer
+ * — past the point the next guest moves into that room.
  *
- * 라이브러리를 들이지 않고 `Intl` 로 처리한다 — 같은 순간을 대상 타임존과 UTC
- * 로 각각 읽어 그 차이만큼 밀어 준다. 서머타임 전환 시각 한두 시간의 오차는
- * 남지만, 한국·일본처럼 서머타임이 없는 지역에서는 정확하다.
+ * Handled with `Intl` rather than pulling in a library — the same instant is read in
+ * the target zone and in UTC and shifted by the difference. An hour or two of error
+ * remains across a DST transition, but zones without DST like Korea and Japan are exact.
  */
 export function zonedHourToUtc(dateOnly: string, hour: number, timeZone: string): Date {
   const iso = `${dateOnly}T${String(hour).padStart(2, '0')}:00:00Z`;
@@ -20,15 +20,15 @@ export function zonedHourToUtc(dateOnly: string, hour: number, timeZone: string)
   return new Date(guess.getTime() - offsetMs);
 }
 
-/** 그 순간 해당 타임존이 UTC 보다 얼마나 앞서는지(밀리초). */
+/** How far ahead of UTC that zone is at that instant, in milliseconds. */
 function zoneOffsetMs(instant: Date, timeZone: string): number {
   try {
     const asZone = new Date(instant.toLocaleString('en-US', { timeZone }));
     const asUtc = new Date(instant.toLocaleString('en-US', { timeZone: 'UTC' }));
     return asZone.getTime() - asUtc.getTime();
   } catch {
-    // 알 수 없는 타임존이면 UTC 로 둔다. 키를 아예 못 만드는 것보다 낫고,
-    // 호텔 설정이 잘못됐다는 사실은 유효 기간 표시에서 드러난다.
+    // An unknown zone falls back to UTC. Better than failing to make a key at all,
+    // and a wrong hotel setting shows up in the displayed validity.
     return 0;
   }
 }

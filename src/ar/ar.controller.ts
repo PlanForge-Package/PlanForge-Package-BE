@@ -17,10 +17,10 @@ import {
 } from './dto/ar.dto';
 
 /**
- * AR / 시티레저 — 후불 거래처.
+ * AR / city ledger — direct-bill accounts.
  *
- * 거래처 등록과 청구서는 채권 관리라 지배인이 맡는다. 폴리오 이관은 손님이
- * 나갈 때 프런트가 하므로 프론트데스크도 할 수 있어야 한다.
+ * Registering accounts and issuing invoices is receivables management, so a manager
+ * owns it. Folio transfers happen at departure, so the front desk needs them too.
  */
 @ApiTags('ar')
 @ApiBearerAuth()
@@ -35,7 +35,7 @@ export class ArController {
     return this.ar.listAccounts(query, user);
   }
 
-  // 연체는 거래처 목록보다 앞에 둔다 — 라우트가 :id 로 먹히지 않게 한다.
+  // Aging comes before the account list — it keeps the route from matching :id.
   @Get('aging')
   @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
   @ApiOperation({ summary: '연체 현황 — 거래처별 경과 구간과 청구서' })
@@ -110,9 +110,9 @@ export class ArController {
 }
 
 /**
- * 폴리오 → 거래처 이관.
+ * Folio to account transfer.
  *
- * 예약 아래에 두는 이유는 프런트가 손님을 내보내며 쓰는 동작이기 때문이다.
+ * It sits under the reservation because the front desk uses it while checking a guest out.
  */
 @ApiTags('ar')
 @ApiBearerAuth()

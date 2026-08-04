@@ -10,10 +10,10 @@ export class PropertiesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * 요청자가 볼 수 있는 호텔 목록.
+   * Hotels the requester may see.
    *
-   * 소속이 있는 계정에는 자기 호텔만 준다. 선택기에 남의 호텔 이름이 뜨는 것만으로도
-   * 조직 구조가 드러나고, 고를 수 없는 항목을 보여줄 이유도 없다.
+   * Accounts with a property get only their own. Another hotel's name in the picker
+   * reveals the org structure, and there is no reason to show unselectable options.
    */
   list(user: AuthUser, includeInactive = false) {
     return this.prisma.property.findMany({
@@ -34,10 +34,10 @@ export class PropertiesService {
   }
 
   /**
-   * 호텔의 객실 타입.
+   * Room types of a hotel.
    *
-   * 블록 할당·재고 화면처럼 "이 호텔에 어떤 타입이 있는가" 만 필요한 곳이 많다.
-   * 객실 전체를 받아 중복을 걷어내면 수백 행을 헛되이 실어 나른다.
+   * Many places, like block allotments and inventory, only need "which types exist
+   * here". Fetching every room and de-duplicating ships hundreds of rows for nothing.
    */
   async listRoomTypes(id: string, user: AuthUser) {
     await this.findOne(id);
@@ -86,11 +86,11 @@ export class PropertiesService {
 }
 
 /**
- * Prisma 고유 제약 위반(P2002)인지 확인한다.
+ * Checks whether this is a Prisma unique constraint violation (P2002).
  *
- * meta.target 은 믿을 수 없다 — Prisma 6.19 는 필드명 대신 "(not available)" 을
- * 주는 경우가 있다. Property 의 고유 제약은 operaHotelId 하나뿐이라 P2002 자체를
- * 근거로 삼아도 오판하지 않는다.
+ * meta.target cannot be trusted — Prisma 6.19 sometimes gives "(not available)"
+ * instead of field names. Property has exactly one unique constraint, operaHotelId,
+ * so relying on P2002 itself misjudges nothing.
  */
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';

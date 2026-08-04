@@ -6,11 +6,11 @@ import { POS_KEY_HEADER, PosKeyGuard, type PosRequest } from './pos-key.guard';
 import { PosService } from './pos.service';
 
 /**
- * 외부 POS 단말이 쓰는 API.
+ * API used by outside POS terminals.
  *
- * `@Public()` 은 "인증이 없다" 가 아니라 "직원 JWT 를 쓰지 않는다" 는 뜻이다.
- * 인증은 PosKeyGuard 가 아웃렛 키로 한다 — 단말에 직원 비밀번호를 심지 않기
- * 위해서다.
+ * `@Public()` does not mean unauthenticated; it means no staff JWT is used.
+ * PosKeyGuard authenticates with the outlet key instead — so that no staff password
+ * ever lives in a terminal.
  */
 @ApiTags('pos')
 @ApiHeader({ name: POS_KEY_HEADER, description: '아웃렛 API 키', required: true })

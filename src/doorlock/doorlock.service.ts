@@ -8,21 +8,21 @@ import { DOOR_LOCK_DRIVER, DoorLockError, type DoorLockDriver } from './doorlock
 import { zonedHourToUtc } from './local-time';
 import type { IssueKeyDto, RevokeKeyDto } from './dto/doorlock.dto';
 
-/** 체크아웃 시각. 이 시각까지 카드가 열린다. 호텔 설정으로 뺄 값이지만 지금은 고정한다. */
+/** Check-out time; cards open until then. It belongs in hotel settings, fixed for now. */
 const CHECKOUT_HOUR = 12;
 
-/** 체크인 전 몇 시간부터 카드가 열리는지. 얼리 체크인 여유. */
+/** How many hours before check-in cards start working. Early check-in slack. */
 const EARLY_ACCESS_HOURS = 3;
 
 /**
- * 객실 키.
+ * Room keys.
  *
- * 실제 카드 데이터는 잠금장치 벤더가 들고 있다. 여기서 하는 일은 **언제 누구에게
- * 무엇을 발급했는지 남기고, 열려 있으면 안 되는 카드를 죽이는 것**이다.
+ * The card data itself lives with the lock vendor. What happens here is **recording
+ * what was issued to whom and when, and killing cards that must not open**.
  *
- * 가장 위험한 실패는 카드가 살아 있는 채로 잊히는 것이다 — 체크아웃한 손님의
- * 카드가 다음 손님이 들어온 방을 연다. 그래서 발급보다 무효화 쪽에 더 많은
- * 장치를 둔다.
+ * The most dangerous failure is a card left alive and forgotten — a departed guest's
+ * card opens the room the next guest is in. So there is more machinery around
+ * voiding than around issuing.
  */
 @Injectable()
 export class DoorLockService {
@@ -33,7 +33,7 @@ export class DoorLockService {
     @Inject(DOOR_LOCK_DRIVER) private readonly driver: DoorLockDriver,
   ) {}
 
-  /** 이 예약에 발급된 카드 이력. 분실 신고 때 어느 카드를 죽일지 고른다. */
+  /** Cards issued for this reservation. Used to pick which to kill on a loss report. */
   async listByReservation(reservationId: string, user: AuthUser) {
     const reservation = await this.loadReservation(reservationId, user);
 
@@ -46,17 +46,17 @@ export class DoorLockService {
     return {
       reservationId,
       roomNumber: reservation.assignedRoomNumber,
-      /** 모의 모드면 화면이 그 사실을 알려야 한다. 이 키로는 문이 열리지 않는다. */
+      /** In mock mode the screen has to say so. This key opens no door. */
       driverMode: this.driver.mode,
       items: keys.map(withExpiry),
     };
   }
 
   /**
-   * 키 발급.
+   * Key issue.
    *
-   * 재실 예약과 배정된 객실이 있어야 한다. 아직 들어오지 않은 손님에게 카드를
-   * 주면 그 방에 지금 묵고 있는 사람의 문이 열린다.
+   * Requires an in-house reservation and an assigned room. A card given to a guest
+   * who has not arrived opens the door of whoever is staying there now.
    */
   async issue(reservationId: string, dto: IssueKeyDto, user: AuthUser) {
     const reservation = await this.loadReservation(reservationId, user);
@@ -91,10 +91,10 @@ export class DoorLockService {
     const sequence = previous + 1;
 
     /*
-     * 재발급이면 이전 카드를 먼저 죽인다.
+     * On a reissue the previous card is killed first.
      *
-     * 분실 재발급인데 이전 카드가 살아 있으면 재발급의 의미가 없다. 잃어버린
-     * 카드로 계속 문이 열린다.
+     * Reissuing after a loss is pointless if the old card is still alive — the lost
+     * card keeps opening the door.
      */
     if (dto.replaceExisting !== false) {
       await this.revokeActive(reservationId, '재발급');
@@ -144,7 +144,7 @@ export class DoorLockService {
     assertWithinScope(user, key.propertyId);
 
     if (key.status !== RoomKeyStatus.ACTIVE) {
-      // 이미 죽은 카드를 다시 죽이라는 요청은 성공으로 둔다. 멱등해야 한다.
+      // Killing an already dead card returns success. It has to be idempotent.
       return withExpiry(key);
     }
 
@@ -154,10 +154,10 @@ export class DoorLockService {
   }
 
   /**
-   * 이 예약의 살아 있는 카드를 전부 죽인다.
+   * Kills every live card for this reservation.
    *
-   * 체크아웃과 객실 변경이 부른다. 이걸 빠뜨리면 나간 손님의 카드가 다음 손님의
-   * 방을 연다 — 이 도메인에서 가장 위험한 실패다.
+   * Called by check-out and room change. Missed, a departed guest's card opens the
+   * next guest's room — the most dangerous failure in this domain.
    */
   async revokeActive(reservationId: string, reason: string): Promise<number> {
     const active = await this.prisma.roomKey.findMany({
@@ -175,10 +175,10 @@ export class DoorLockService {
   // ---------------------------------------------------------------------------
 
   /**
-   * 벤더에서 먼저 죽이고 로컬을 표시한다.
+   * The vendor kills it first, then the local row is marked.
    *
-   * 순서가 중요하다. 로컬만 먼저 바꾸면 벤더 호출이 실패했을 때 "죽었다고
-   * 적혀 있지만 실제로는 열리는 카드" 가 남고, 아무도 그 사실을 모른다.
+   * The order matters. Changed locally first, a failed vendor call leaves a card
+   * "recorded as dead but actually opening", and nobody knows.
    */
   private async revokeOne(key: RoomKey, reason: string): Promise<void> {
     try {
@@ -210,10 +210,10 @@ export class DoorLockService {
 }
 
 /**
- * 만료는 저장하지 않고 볼 때 계산한다.
+ * Expiry is computed on read rather than stored.
  *
- * 상태를 배치로 갱신하면 배치가 밀린 동안 화면이 거짓말을 한다. 잠금장치는
- * 어차피 유효 기간을 스스로 보므로, 여기서는 표시만 맞추면 된다.
+ * Refreshing status by batch makes the screen lie while the batch is behind. The
+ * lock checks validity itself, so only the display needs to agree here.
  */
 function withExpiry(key: RoomKey & { issuedBy?: { name: string } | null }) {
   const expired = key.status === RoomKeyStatus.ACTIVE && key.validUntil <= new Date();

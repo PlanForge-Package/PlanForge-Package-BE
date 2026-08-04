@@ -13,7 +13,7 @@ import { PaymentsService } from './payments.service';
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
-  // 결제는 프런트데스크의 일상 업무다.
+  // Taking payment is the front desk's daily work.
   @Get('reservations/:id/payments')
   @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
   @ApiOperation({ summary: '이 예약의 결제 이력' })
@@ -51,7 +51,7 @@ export class PaymentsController {
     return this.payments.void(paymentId, user);
   }
 
-  // 환불은 돈이 나가는 방향이다. 지배인 이상만 한다.
+  // A refund sends money out. Managers and above only.
   @Post('payments/:paymentId/refund')
   @Roles(UserRole.MANAGER)
   @ApiOperation({ summary: '환불 — 매입 후. 부분 환불이 됩니다' })

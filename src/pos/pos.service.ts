@@ -12,14 +12,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { PostRoomChargeDto, VoidRoomChargeDto } from './dto/pos.dto';
 
 /**
- * 외부 POS 의 룸차지.
+ * Room charges from outside POS.
  *
- * 아웃렛이 할 수 있는 일은 두 가지뿐이다 — 재실 객실에 요금을 달고, 자기가 단
- * 요금을 취소하는 것. 예약을 읽거나 손님 정보를 가져가지 못한다. 단말은 매장에
- * 놓여 있고 물리적으로 안전하지 않다고 보아야 한다.
+ * An outlet can do exactly two things — post a charge to an occupied room and void
+ * a charge it posted. It cannot read reservations or take guest details. The
+ * terminal sits in a shop and must be treated as physically unsafe.
  *
- * 요금은 OPERA 의 폴리오에 달린다. 로컬에만 적으면 OPERA 의 계산서와 우리
- * 잔액이 갈리고, 손님은 두 장의 다른 명세서를 받는다.
+ * Charges land on the OPERA folio. Recorded locally only, OPERA's bill and our
+ * balance diverge and the guest receives two different statements.
  */
 @Injectable()
 export class PosService {
@@ -29,10 +29,10 @@ export class PosService {
   ) {}
 
   /**
-   * 지금 요금을 달 수 있는 객실.
+   * Rooms that can be charged right now.
    *
-   * 이름은 성만 준다. 매장 단말에 손님 명단이 통째로 뜨면 그 자체로 유출이고,
-   * "1203호 김 고객님" 을 확인하는 데 그 이상은 필요 없다.
+   * Only the surname is given. A full guest list on a shop terminal is a leak in
+   * itself, and confirming "Mr Kim in 1203" needs nothing more.
    */
   async chargeableRooms(outlet: PosOutlet) {
     const reservations = await this.prisma.reservation.findMany({
@@ -58,16 +58,16 @@ export class PosService {
   }
 
   /**
-   * 룸차지.
+   * Room charge.
    *
-   * 같은 아웃렛의 같은 전표는 한 번만 달린다. 네트워크가 끊겨 POS 가 재전송하는
-   * 일은 흔하고, 손님에게 두 번 청구되면 되돌리기 어렵다. 재전송이면 새로 달지
-   * 않고 이미 단 것을 그대로 돌려준다 — POS 입장에서는 성공으로 보여야 재시도가
-   * 멈춘다.
+   * One check from one outlet posts once. A POS resending after a network drop is
+   * common and a double charge is hard to undo. On a resend nothing new is posted
+   * and the existing charge is returned — the POS has to see success for its
+   * retries to stop.
    */
   async postCharge(outlet: PosOutlet, dto: PostRoomChargeDto) {
-    // 재전송을 여기서 먼저 끊는다. OPERA 도 같은 전표를 두 번 달지 않지만,
-    // 확실히 아는 재시도까지 외부 호출을 태울 이유가 없다.
+    // Resends are cut off here first. OPERA will not post the same check twice
+    // either, but there is no reason to spend a call on a retry we already know.
     const existing = await this.prisma.posting.findUnique({
       where: { outletId_reference: { outletId: outlet.id, reference: dto.reference } },
       include: { folio: { select: { reservationId: true, window: true, balance: true } } },
@@ -87,7 +87,7 @@ export class PosService {
       select: { id: true, currency: true, operaReservationId: true, property: true },
     });
     if (!reservation) {
-      // 빈 객실에 요금을 달면 아무도 받지 않는 청구가 생긴다.
+      // Charging an empty room creates a bill nobody will pay.
       throw new NotFoundException(
         `재실 중인 예약이 없습니다: ${dto.roomNumber}호. 객실 번호를 확인해 주세요.`,
       );
@@ -99,12 +99,12 @@ export class PosService {
     }
 
     /*
-     * 창구는 라우팅 지시가 정한다.
+     * Routing instructions decide the window.
      *
-     * POS 단말은 이 예약의 정산 편성을 모른다. 회사가 객실료를, 손님이
-     * 부대비용을 내는 편성에서 단말이 보낸 창구를 그대로 믿으면 요금이
-     * 엉뚱한 쪽에 붙는다. 단말이 창구를 지정했으면 그건 존중한다 —
-     * 아무 지시도 없을 때만 1번으로 간다.
+     * A POS terminal does not know this reservation's billing split. Where the
+     * company pays the room and the guest pays extras, trusting the window the
+     * terminal sent puts the charge on the wrong side. A window the terminal did
+     * specify is respected — window 1 is used only when no instruction applies.
      */
     const routing = dto.window
       ? null
@@ -137,17 +137,17 @@ export class PosService {
         where: { folio: { reservationId: reservation.id, window }, reference: dto.reference },
       });
       if (!posting) {
-        // OPERA 가 받아 줬는데 사본에 없으면 매핑이 어긋난 것이다. 조용히 넘기면
-        // 취소도 대사도 할 수 없는 요금이 남는다.
+        // OPERA accepted it but our copy lacks it, so the mapping is off. Passed over
+        // silently, a charge remains that can be neither voided nor reconciled.
         throw new BadRequestException('요금을 달았으나 내역을 확인하지 못했습니다.');
       }
 
-      // 어느 매장이 달았는지는 OPERA 가 모른다. 사본에만 남는다.
+      // OPERA does not know which outlet posted it. That stays only in our copy.
       if (posting.outletId !== outlet.id) {
         try {
           await tx.posting.update({ where: { id: posting.id }, data: { outletId: outlet.id } });
         } catch (error) {
-          // 같은 전표가 동시에 두 번 들어온 경우. 고유 제약이 막아 준다.
+          // The same check arriving twice at once. The unique constraint stops it.
           if (isUniqueViolation(error)) {
             throw new ConflictException(`이미 처리된 전표입니다: ${dto.reference}`);
           }
@@ -167,10 +167,10 @@ export class PosService {
   }
 
   /**
-   * 룸차지 취소.
+   * Room charge void.
    *
-   * 원본을 지우지 않고 반대 부호의 조정을 하나 더 단다. 지우면 손님 명세서에서
-   * 요금이 통째로 사라져 무엇이 어떻게 정정됐는지 설명할 수 없다.
+   * The original is kept and an opposite-signed adjustment is added. Deleted, the
+   * charge vanishes from the guest's bill and no correction can be explained.
    */
   async voidCharge(outlet: PosOutlet, dto: VoidRoomChargeDto) {
     const original = await this.prisma.posting.findUnique({
@@ -180,8 +180,8 @@ export class PosService {
     if (!original) {
       throw new NotFoundException(`전표를 찾을 수 없습니다: ${dto.reference}`);
     }
-    // voidedById 가 이 포스팅을 취소한 조정을 가리킨다. 반대 방향 관계를 보면
-    // "이 조정이 취소한 원본" 이 나와 언제나 비어 있다 — 방향을 거꾸로 읽기 쉽다.
+    // voidedById points at the adjustment that voided this posting. The reverse
+    // relation gives "the original this adjustment voided" and is always empty here.
     if (original.voidedById) {
       throw new ConflictException(`이미 취소된 전표입니다: ${dto.reference}`);
     }
@@ -202,7 +202,7 @@ export class PosService {
       folio = await this.core.voidPosting(reservation.operaReservationId, original.operaPostingId, {
         hotelId: reservation.property.operaHotelId,
         ...(dto.reason ? { reason: dto.reason } : {}),
-        // 취소 자체에도 전표를 붙여 둔다. 취소 요청이 재전송되면 여기서 걸린다.
+        // The void carries a check number too, so a resent void is caught here.
         reference: `${dto.reference}-VOID`,
       });
     } catch (error) {
@@ -230,10 +230,10 @@ export class PosService {
   // ---------------------------------------------------------------------------
 
   /**
-   * OPERA 의 거절을 단말이 읽을 수 있는 말로 바꾼다.
+   * Turns an OPERA rejection into something the terminal can show.
    *
-   * 매장 직원은 폴리오 윈도가 무엇인지 모른다. "프런트에 문의" 까지 알려 줘야
-   * 다음 행동이 정해진다.
+   * Shop staff do not know what a folio window is. "Ask the front desk" is what
+   * tells them what to do next.
    */
   private describeFolioFailure(error: unknown, roomNumber: string): Error {
     const message = error instanceof Error ? error.message : String(error);

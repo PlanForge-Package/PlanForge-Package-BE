@@ -5,10 +5,10 @@ import type { Request } from 'express';
 import { REQUIRED_ROLES, type AuthUser } from './auth.constants';
 
 /**
- * 역할 검사. `@Roles()` 가 없는 라우트는 인증만 통과하면 된다.
+ * Role check. Routes without `@Roles()` need only authentication.
  *
- * ADMIN 은 항상 통과한다 — 권한을 늘릴 때마다 ADMIN 을 목록에 빠뜨려 스스로
- * 잠기는 일을 막기 위해서다.
+ * ADMIN always passes — it stops us locking ourselves out by forgetting ADMIN in
+ * the list every time a permission is added.
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -24,7 +24,7 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request & { user?: AuthUser }>();
     const user = request.user;
 
-    // 인증 가드가 먼저 돌므로 여기서 user 가 없다면 배선이 잘못된 것이다.
+    // The auth guard runs first, so a missing user here means the wiring is wrong.
     if (!user) {
       throw new ForbiddenException('권한을 확인할 수 없습니다.');
     }

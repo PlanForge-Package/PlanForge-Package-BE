@@ -6,7 +6,7 @@ import type { CoreFolio } from '../core/core.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { FoliosService } from './folios.service';
 
-// 미러링은 folio-mirror.spec.ts 가 따로 본다. 여기서는 위임과 가드만 본다.
+// Mirroring is covered by folio-mirror.spec.ts. Here only delegation and guards.
 jest.mock('./folio-mirror', () => ({
   ...jest.requireActual('./folio-mirror'),
   mirrorFolios: jest.fn().mockResolvedValue(undefined),
@@ -133,7 +133,7 @@ describe('FoliosService — 위임', () => {
     );
   });
 
-  // 부호를 호출자가 정하면 결제를 양수로 보내 잔액이 늘어나는 사고가 난다.
+  // Letting the caller choose the sign invites sending a payment positive and growing the balance.
   it('조정의 차감 방향만 따로 넘긴다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -225,8 +225,8 @@ describe('FoliosService — 이관', () => {
   });
 
   /*
-   * Payment 가 폴리오를 가리키고 있어, 포스팅만 옮기면 환불이 어느 폴리오를
-   * 되돌려야 할지 알 수 없다. OPERA 는 이 관계를 모르므로 여기서 막는다.
+   * The Payment points at a folio, so moving only the posting leaves a refund unable
+   * to tell which folio to reverse. OPERA does not know this relation, so it is blocked here.
    */
   it('결제로 생긴 거래는 옮기지 않는다', async () => {
     const prisma = buildPrisma({
@@ -285,7 +285,7 @@ describe('FoliosService — 라우팅 지시', () => {
     );
   });
 
-  // 없는 창구로 보내면 요금이 붙을 때마다 실패한다.
+  // Sending to a missing window fails on every charge.
   it('열려 있지 않은 창구로는 걸지 않는다', async () => {
     const prisma = buildPrisma({ folio: { findUnique: jest.fn().mockResolvedValue(null) } });
     const service = await buildService(prisma);

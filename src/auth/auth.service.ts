@@ -7,10 +7,10 @@ import type { JwtPayload } from './auth.constants';
 import type { AuthUserDto, LoginDto, LoginResponseDto } from './dto/auth.dto';
 
 /**
- * 존재하지 않는 계정에도 해싱 비용을 치르기 위한 더미 해시.
+ * Dummy hash so a non-existent account still pays the hashing cost.
  *
- * 없는 이메일이면 즉시 반환하고 있는 이메일이면 bcrypt 를 도는 구현은 응답
- * 시간 차이로 계정 존재 여부가 새어 나간다.
+ * Returning immediately for an unknown email and running bcrypt for a known one
+ * leaks whether the account exists through the response time.
  */
 const DUMMY_HASH = '$2b$10$abcdefghijklmnopqrstuvCq6XxKyPqQ5wZ0kY0RQ8pJZ0Yb0uK.';
 
@@ -30,8 +30,8 @@ export class AuthService {
 
     const matches = await bcrypt.compare(dto.password, user?.passwordHash ?? DUMMY_HASH);
 
-    // 아이디 없음·비밀번호 틀림·비활성 계정을 같은 문구로 돌려준다.
-    // 어느 쪽이 틀렸는지 알려주면 계정 열거에 쓰인다.
+    // Unknown email, wrong password and disabled account all return the same message.
+    // Saying which one was wrong is what account enumeration runs on.
     if (!user || !matches || !user.active) {
       this.logger.warn(`로그인 실패: ${email}`);
       throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
@@ -60,11 +60,11 @@ export class AuthService {
     };
   }
 
-  /** 토큰이 가리키는 계정이 아직 유효한지 다시 확인해 돌려준다. */
+  /** Re-checks that the account the token names is still valid, and returns it. */
   async me(userId: string): Promise<AuthUserDto> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
-    // 토큰 발급 후 계정이 지워지거나 비활성화될 수 있다. 토큰만 믿지 않는다.
+    // An account can be deleted or disabled after the token was issued. The token alone is not trusted.
     if (!user || !user.active) {
       throw new UnauthorizedException('사용할 수 없는 계정입니다. 다시 로그인해 주세요.');
     }
@@ -89,7 +89,7 @@ function toAuthUser(user: {
   };
 }
 
-/** `8h`·`30m`·`7d` 같은 표기를 밀리초로. 알 수 없으면 8시간. */
+/** `8h`, `30m`, `7d` and the like to milliseconds. Unknown falls back to 8 hours. */
 function parseDuration(value: string): number {
   const match = /^(\d+)([smhd])$/.exec(value.trim());
   if (!match) return 8 * 60 * 60 * 1000;

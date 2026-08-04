@@ -17,10 +17,10 @@ import {
 } from 'class-validator';
 
 /**
- * 선호 사항 코드.
+ * Preference codes.
  *
- * 자유 텍스트로 받으면 "고층"·"높은 층"·"high floor" 가 뒤섞여 배정할 때 아무도
- * 걸러낼 수 없다. 코드로 제한하고 표기는 화면이 맡는다.
+ * Taken as free text, "high floor" and "upper floor" mix together and nobody can
+ * filter at assignment time. Codes are enforced and the screen handles the wording.
  */
 export const PREFERENCE_CODES = [
   'HIGH_FLOOR',
@@ -62,7 +62,7 @@ export class ListProfilesDto {
   @IsBoolean()
   vip?: boolean;
 
-  /** 병합된 프로필은 정본이 아니므로 기본으로 숨긴다. */
+  /** Merged profiles are not canonical, so they are hidden by default. */
   @ApiPropertyOptional({ description: '병합된 프로필도 포함' })
   @IsOptional()
   @Type(() => Boolean)

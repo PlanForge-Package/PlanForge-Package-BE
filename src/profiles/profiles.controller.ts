@@ -13,7 +13,7 @@ import { ProfilesService } from './profiles.service';
 export class ProfilesController {
   constructor(private readonly profiles: ProfilesService) {}
 
-  // 프런트데스크가 손님을 찾는 첫 화면이다.
+  // The first screen the front desk uses to find a guest.
   @Get()
   @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
   @ApiOperation({ summary: '프로필 검색 — 이름·이메일·전화·멤버십 번호' })
@@ -42,7 +42,7 @@ export class ProfilesController {
     return this.profiles.update(id, dto);
   }
 
-  // 병합은 되돌리기 어렵다. 지배인 이상만 한다.
+  // A merge is hard to undo. Managers and above only.
   @Post(':id/merge')
   @Roles(UserRole.MANAGER)
   @ApiOperation({ summary: '중복 병합 — 이 프로필을 대상 프로필로 합칩니다' })

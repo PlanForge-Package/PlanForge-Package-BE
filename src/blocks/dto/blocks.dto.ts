@@ -53,7 +53,7 @@ export class BlockAllotmentInputDto {
   @MaxLength(20)
   ratePlanCode?: string;
 
-  /** 단체는 값을 따로 합의한다. 넣으면 요금 코드의 계산 대신 이 금액으로 판다. */
+  /** Groups agree their own price. Set, it sells at this amount instead of the rate code's. */
   @ApiPropertyOptional({ description: '협의 요금', example: 150000 })
   @IsOptional()
   @Type(() => Number)
@@ -118,7 +118,7 @@ export class CreateBlockDto {
   @IsEnum(BlockStatus)
   status?: BlockStatus;
 
-  /** 중첩 배열도 `@ValidateNested({ each: true })` 가 없으면 whitelist 가 걷어낸다. */
+  /** Nested arrays are stripped by the whitelist without `@ValidateNested({ each: true })`. */
   @ApiProperty({ type: [BlockAllotmentInputDto] })
   @ValidateNested({ each: true })
   @ArrayMinSize(1, { message: '객실 타입을 하나 이상 지정해 주세요.' })
@@ -144,7 +144,7 @@ export class UpdateBlockDto {
   @Matches(DATE_ONLY, { message: 'cutoffDate 는 YYYY-MM-DD 형식이어야 합니다.' })
   cutoffDate?: string;
 
-  /** 협의 요금 조정. 보낸 객실 타입만 바꾼다. */
+  /** Negotiated rate change. Only the room types sent are altered. */
   @ApiPropertyOptional({ type: [BlockRateInputDto] })
   @IsOptional()
   @ValidateNested({ each: true })

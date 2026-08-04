@@ -13,7 +13,7 @@ import { NightAuditService } from './night-audit.service';
 export class NightAuditController {
   constructor(private readonly nightAudit: NightAuditService) {}
 
-  // 마감 점검은 야간 근무 프론트데스크가 직접 본다.
+  // The close checklist is read by the night-shift front desk itself.
   @Get()
   @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
   @ApiOperation({ summary: '야간 감사 점검표 — 지금 마감하면 무엇이 잘못 남는가' })

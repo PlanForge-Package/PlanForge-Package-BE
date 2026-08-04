@@ -5,10 +5,10 @@ import type { Request } from 'express';
 import { IS_PUBLIC, type AuthUser, type JwtPayload } from './auth.constants';
 
 /**
- * 전역 가드. `@Public()` 이 붙지 않은 모든 라우트에 유효한 Bearer 토큰을 요구한다.
+ * Global guard. Every route without `@Public()` requires a valid Bearer token.
  *
- * 화이트리스트가 아니라 블랙리스트로 갔다면 새 컨트롤러를 추가할 때마다 보호를
- * 잊을 수 있다. 기본을 "보호됨" 으로 두고 예외를 명시하는 편이 안전하다.
+ * A blacklist instead of a whitelist would mean forgetting protection on each new
+ * controller. Defaulting to protected and naming the exceptions is safer.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -34,7 +34,7 @@ export class JwtAuthGuard implements CanActivate {
     try {
       payload = await this.jwt.verifyAsync<JwtPayload>(token);
     } catch (error) {
-      // 만료와 위조를 구분해 알린다 — 클라이언트가 재로그인 안내를 다르게 줄 수 있다.
+      // Expiry and forgery are reported apart — the client can prompt for re-login differently.
       const expired = error instanceof Error && error.name === 'TokenExpiredError';
       throw new UnauthorizedException(
         expired ? '세션이 만료되었습니다. 다시 로그인해 주세요.' : '유효하지 않은 토큰입니다.',

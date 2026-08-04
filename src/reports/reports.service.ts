@@ -12,15 +12,15 @@ import { resolvePropertyScope } from '../properties/property-scope';
 import { formatDateOnly, parseDateOnly } from '../sync/reservation.mapper';
 import type { DailyReportDto } from './dto/reports.dto';
 
-/** 조회 가능한 최대 기간. 넓히면 한 번에 읽는 예약 수가 감당하기 어려워진다. */
+/** Longest queryable range. Any wider and one read pulls too many reservations. */
 const MAX_DAYS = 92;
 
 /**
- * 실적이 잡히는 예약 상태.
+ * Reservation statuses that count towards performance.
  *
- * 취소·노쇼·대기는 뺀다 — 그날 실제로 방을 쓴 예약만 점유율에 들어가야 한다.
- * 아직 도착하지 않은 예약(RESERVED·CONFIRMED)도 미래 날짜에서는 실적이 아니라
- * 예약분이므로 따로 센다.
+ * Cancelled, no-show and waitlisted are excluded — only reservations that used a
+ * room that day belong in occupancy. Not-yet-arrived bookings (RESERVED,
+ * CONFIRMED) are counted separately, as on future dates they are on the books.
  */
 const REALIZED: ReservationStatus[] = [ReservationStatus.IN_HOUSE, ReservationStatus.CHECKED_OUT];
 
@@ -38,19 +38,19 @@ export interface DailyRow {
 }
 
 /**
- * 영업 실적.
+ * Business performance.
  *
- * 두 가지 매출을 분명히 나눠 둔다.
+ * Two kinds of revenue are kept apart.
  *
- * - **객실 매출(계약 기준)**: 예약의 총액을 박수로 나눠 각 날짜에 배분한 값.
- *   OPERA 가 확정한 금액이라 모든 예약에 있고, 점유율·ADR·RevPAR 의 근거가 된다.
- * - **포스팅 매출(실제 청구)**: 폴리오에 올라간 청구·결제. 체크인 이후에만 생긴다.
+ * - **Room revenue (contracted)**: the reservation total split across its nights.
+ *   OPERA confirmed it, so every reservation has it; occupancy, ADR and RevPAR use it.
+ * - **Posted revenue (actually charged)**: folio charges and payments, from check-in on.
  *
- * 둘을 섞으면 "매출이 왜 다른가" 를 아무도 설명할 수 없게 된다. 정산 대사에는
- * 포스팅을, 판매 지표에는 계약 기준을 쓴다.
+ * Mixed together, nobody can explain why the revenue differs. Reconciliation uses
+ * posted revenue, sales metrics use contracted revenue.
  *
- * 이 숫자는 로컬 사본에서 계산한 값이다. 회계 마감에 쓰는 공식 수치는 OPERA 의
- * 리포트를 따라야 한다 — 여기 값은 운영 판단을 위한 것이다.
+ * These numbers come from the local copy. Official figures for accounting close
+ * must follow OPERA's reports — these are for operational judgement.
  */
 @Injectable()
 export class ReportsService {
@@ -68,7 +68,7 @@ export class ReportsService {
         where: { propertyId: property.id },
         select: { id: true, status: true },
       }),
-      // 기간과 겹치는 예약만 읽는다. 도착이 기간 뒤이거나 출발이 기간 앞이면 무관하다.
+      // Only reservations overlapping the range. Arriving after or leaving before is irrelevant.
       this.prisma.reservation.findMany({
         where: {
           propertyId: property.id,
@@ -94,10 +94,10 @@ export class ReportsService {
         select: { type: true, amount: true, postedAt: true },
       }),
       /*
-       * 분모에서 뺄 고장 객실.
+       * Out-of-order rooms, removed from the denominator.
        *
-       * OutOfOrder 만 읽는다. OutOfService 는 팔지 않을 뿐 재고에는 남아 있어
-       * 분모가 줄지 않는다 — 그 차이가 두 구분을 나눠 둔 이유다.
+       * Only OutOfOrder is read. OutOfService is merely not for sale and stays in
+       * inventory, so the denominator holds — that difference is why they are split.
        */
       this.prisma.roomOutage.findMany({
         where: {
@@ -111,11 +111,11 @@ export class ReportsService {
     ]);
 
     /**
-     * 분모는 그 날짜에 팔 수 있었던 객실 수다.
+     * The denominator is how many rooms were sellable on that date.
      *
-     * 기간 기록이 있으므로 지난 날짜도 그때의 가용 객실로 계산한다. 다만 기간
-     * 없이 상태만 고장으로 바꿔 둔 객실은 언제부터인지 알 수 없어, 오늘 이후
-     * 날짜에서만 뺀다.
+     * Outages carry dates, so past days use the rooms available then. A room left
+     * merely flagged out of order has no start date, so it is subtracted only from
+     * today onwards.
      */
     const today = formatDateOnly(new Date());
     const statusOnlyBroken = rooms
@@ -147,8 +147,8 @@ export class ReportsService {
       const sold = stays.filter((r) => REALIZED.includes(r.status));
       const booked = stays.filter((r) => BOOKED.includes(r.status));
 
-      // 총액을 박수로 나눠 그날 몫만 더한다. 나누어떨어지지 않는 끝자리는
-      // 날짜별로 흩어지지만 기간 합계는 총액과 어긋나지 않는다.
+      // Divide the total by nights and add only that day's share. The remainder
+      // scatters across dates but the range total still matches the reservation.
       const revenue = sold.reduce(
         (sum, r) => sum.add(nightlyShare(r.totalAmount, r.arrivalDate, r.departureDate)),
         new Prisma.Decimal(0),
@@ -168,8 +168,8 @@ export class ReportsService {
 
     const totalRevenue = rows.reduce((sum, row) => sum.add(row.roomRevenue), new Prisma.Decimal(0));
     const totalSold = rows.reduce((sum, row) => sum + row.roomsSold, 0);
-    // 날짜마다 가용 객실이 다르므로 합계도 날짜별 값을 더한다. 하루치를 곱하면
-    // 공사 기간이 들어간 구간에서 분모가 부풀어 점유율이 낮게 나온다.
+    // Available rooms differ per date, so the total sums per-date values. Multiplying
+    // one day inflates the denominator across an outage and understates occupancy.
     const totalAvailable = rows.reduce((sum, row) => sum + row.roomsAvailable, 0);
 
     const charges = sumBy(postings, (p) => p.type === 'CHARGE' || p.type === 'TAX');
@@ -183,7 +183,7 @@ export class ReportsService {
       to: dates[dates.length - 1],
       nights: rows.length,
       roomsAvailable: availableOn(dates[dates.length - 1]!),
-      /** 근거를 함께 내린다. 지표만 보면 분모가 무엇인지 알 수 없다. */
+      /** The inputs come with it. From the metric alone the denominator is invisible. */
       basis:
         '판매 가능 객실은 전체 객실에서 그 날짜에 고장(OOO)인 객실을 뺀 수입니다. 판매중지(OOS)는 재고에 남아 분모에서 빠지지 않습니다.',
       totals: {
@@ -195,10 +195,10 @@ export class ReportsService {
         revpar: totalAvailable === 0 ? '0.00' : totalRevenue.div(totalAvailable).toFixed(2),
       },
       /**
-       * 채널·출처·시장별 분해.
+       * Breakdown by channel, source and market.
        *
-       * 어디서 들어온 예약이 얼마를 남기는지 모르면 수수료를 물고도 계속 파는
-       * 채널을 골라낼 수 없다. 합계는 위의 totals 와 같아야 한다.
+       * Without knowing what each origin leaves behind, a channel that keeps
+       * selling at a loss stays hidden. These must sum to the totals above.
        */
       breakdown: {
         channel: groupBy(dates, reservations, (r) => r.channelCode),
@@ -206,10 +206,10 @@ export class ReportsService {
         market: groupBy(dates, reservations, (r) => r.marketCode),
       },
       /**
-       * 폴리오에 실제로 올라간 금액. 계약 기준 매출과 다른 값이다.
+       * What actually posted to the folio. Different from contracted revenue.
        *
-       * `amount` 는 저장 시점에 이미 부호가 붙어 있다(결제·차감 조정은 음수).
-       * 미수는 그래서 단순 합계다 — 결제를 한 번 더 빼면 두 번 빠진다.
+       * `amount` is already signed when stored (payments and credits negative).
+       * Outstanding is therefore a plain sum — subtracting payments again doubles them.
        */
       postings: {
         charges: charges.toFixed(2),
@@ -223,7 +223,7 @@ export class ReportsService {
 
   // ---------------------------------------------------------------------------
 
-  /** 기간을 날짜 배열로 편다. 뒤집힌 범위와 지나치게 넓은 범위는 여기서 막는다. */
+  /** Expands a range into dates. Reversed and overly wide ranges are rejected here. */
   private expandRange(from: string, to: string): string[] {
     if (to < from) {
       throw new BadRequestException('종료일은 시작일보다 뒤여야 합니다.');
@@ -265,15 +265,15 @@ export interface BreakdownRow {
   roomsSold: number;
   roomRevenue: string;
   adr: string;
-  /** 이 분류가 전체 판매에서 차지하는 비중. 채널 의존도를 한눈에 본다. */
+  /** This bucket's share of total sales. Channel dependence at a glance. */
   share: number;
 }
 
 /**
- * 분류별 실적.
+ * Performance by bucket.
  *
- * 코드가 비어 있는 예약은 '(미지정)' 으로 모은다. 빼 버리면 분해 합계가 전체와
- * 어긋나 어느 쪽이 맞는지 알 수 없게 된다.
+ * Reservations with no code are grouped as "(unspecified)". Dropped instead, the
+ * breakdown would not sum to the total and neither figure could be trusted.
  */
 function groupBy(
   dates: string[],
@@ -308,12 +308,12 @@ function groupBy(
         adr: bucket.roomsSold === 0 ? '0.00' : bucket.revenue.div(bucket.roomsSold).toFixed(2),
         share: totalSold === 0 ? 0 : round(bucket.roomsSold / totalSold, 4),
       }))
-      // 매출이 큰 쪽부터. 채널 의존도는 위에서부터 읽는 것이 자연스럽다.
+      // Largest revenue first. Channel dependence reads naturally from the top.
       .sort((a, b) => Number(b.roomRevenue) - Number(a.roomRevenue))
   );
 }
 
-/** 그 날짜에 숙박했는지. 출발일 당일은 방을 쓰지 않으므로 제외한다. */
+/** Whether the stay covers that date. The departure day uses no room, so it is excluded. */
 function coversNight(
   reservation: { arrivalDate: Date; departureDate: Date },
   date: string,

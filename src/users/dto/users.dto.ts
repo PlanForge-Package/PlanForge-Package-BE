@@ -14,7 +14,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-/** 비밀번호 최소 길이. 로그인 DTO 와 같은 값을 쓴다. */
+/** Minimum password length. The same value as the login DTO. */
 export const MIN_PASSWORD_LENGTH = 8;
 
 const normalizeEmail = ({ value }: { value: unknown }) =>

@@ -6,7 +6,7 @@ import { DoorLockService } from '../doorlock/doorlock.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReservationsService } from './reservations.service';
 
-/** $transaction 콜백에 그대로 넘길 트랜잭션 클라이언트 목. */
+/** Transaction client mock passed straight into the $transaction callback. */
 function buildTx(overrides: Record<string, unknown> = {}) {
   return {
     reservation: { update: jest.fn() },
@@ -17,20 +17,20 @@ function buildTx(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * 잠금장치는 따로 검증한다(doorlock.service.spec.ts).
+ * Door locks are verified separately (doorlock.service.spec.ts).
  *
- * 여기서는 체크아웃·객실 변경이 카드 무효화를 **부르는지**만 본다 — 부르지
- * 않으면 나간 손님의 카드가 다음 손님의 방을 연다.
+ * Here we only check that check-out and room change **call** key voiding — without
+ * it, a departed guest's card opens the next guest's room.
  */
 function buildDoorLock() {
   return { revokeActive: jest.fn().mockResolvedValue(0) };
 }
 
 /**
- * OPERA 는 Core 뒤에 있다.
+ * OPERA sits behind Core.
  *
- * 기본 목은 우리가 보낸 객실을 그대로 확정해 준다. 위임이 실제로 일어나는지와
- * 거절이 로컬에 반영되지 않는지를 함께 본다.
+ * The default mock confirms the room we sent. This checks both that delegation
+ * actually happens and that a rejection is not applied locally.
  */
 function buildCore(overrides: Record<string, unknown> = {}) {
   return {
@@ -52,7 +52,7 @@ function buildPrisma(tx: ReturnType<typeof buildTx>, overrides: Record<string, u
   return {
     reservation: {
       findUnique: jest.fn(),
-      // 공유 상대가 그 방을 쓰고 있는지 확인한다.
+      // Checks whether the share partner is in that room.
       findFirst: jest.fn().mockResolvedValue(null),
       ...((overrides.reservation as object) ?? {}),
     },
@@ -85,7 +85,7 @@ async function buildService(
   return moduleRef.get(ReservationsService);
 }
 
-/** 소속이 없는 계정. 호텔 범위 검사는 property-scope.spec.ts 가 따로 다룬다. */
+/** Account with no property. Hotel scoping is covered by property-scope.spec.ts. */
 const ACTOR = {
   id: 'actor-1',
   sub: 'actor-1',
@@ -149,7 +149,7 @@ describe('ReservationsService', () => {
       });
     });
 
-    // 우리가 보낸 값이 아니라 저쪽이 확정한 값이 기준이다.
+    // Their confirmed value is the reference, not the one we sent.
     it('OPERA 가 다른 객실로 확정하면 그 객실을 따른다', async () => {
       const tx = buildTx();
       const prisma = buildPrisma(tx);
@@ -248,8 +248,8 @@ describe('ReservationsService', () => {
     });
 
     /*
-     * 남겨 두면 손님이 예전 방 문을 계속 열 수 있고, 그 방에는 곧 다른 손님이
-     * 들어온다.
+     * Left alive, the guest keeps opening the old door, and another guest moves in
+     * there shortly.
      */
     it('객실이 바뀌면 이전 방 카드를 무효화한다', async () => {
       const tx = buildTx();
@@ -268,7 +268,7 @@ describe('ReservationsService', () => {
       expect(doorLock.revokeActive).toHaveBeenCalledWith('res-1', '객실 변경 1101 → 1203');
     });
 
-    // 카드를 못 죽였으면 객실을 바꾸지도 말아야 한다.
+    // A key we could not kill must also mean the room is not changed.
     it('카드를 못 죽이면 OPERA 에 위임하지 않는다', async () => {
       const tx = buildTx();
       const prisma = buildPrisma(tx);
@@ -378,8 +378,8 @@ describe('ReservationsService', () => {
     });
 
     /*
-     * 이 도메인에서 가장 위험한 실패다. 살려 두면 체크아웃한 손님이 다음 손님이
-     * 들어온 방을 연다.
+     * The most dangerous failure in this domain. Left alive, a departed guest opens
+     * the room the next guest is in.
      */
     it('나가는 손님의 카드를 무효화한다', async () => {
       const tx = buildTx();
@@ -462,8 +462,8 @@ describe('ReservationsService — 객실 공유', () => {
   const OCCUPIED = { id: 'room-1', number: '1203', occupied: true, status: RoomStatus.CLEAN };
 
   /*
-   * 두 손님이 한 방을 쓰되 계산만 따로 하는 편성이 공유다. OPERA 도 같은
-   * 규칙으로 판단한다.
+   * Two guests in one room settling separately is exactly what a share is. OPERA
+   * applies the same rule.
    */
   it('공유 상대가 든 방에는 함께 들어간다', async () => {
     const tx = buildTx();
@@ -496,7 +496,7 @@ describe('ReservationsService — 객실 공유', () => {
     );
   });
 
-  // 같은 묶음이어도 그 방에 있는 상대가 아니면 남의 방이다.
+  // Even within a group, anyone but the partner in that room is a stranger to it.
   it('같은 묶음이어도 다른 방이면 막는다', async () => {
     const tx = buildTx();
     const prisma = buildPrisma(tx);

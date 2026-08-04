@@ -8,7 +8,7 @@ import { resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly } from '../sync/reservation.mapper';
 import type { JournalDto } from './dto/reports.dto';
 
-/** 매출 그룹 표기. 코드 설정에 없는 그룹은 그대로 보여 준다. */
+/** Revenue group labels. Groups absent from the code setup are shown as they are. */
 const GROUP_LABELS: Record<string, string> = {
   Room: '객실',
   FoodBeverage: '식음',
@@ -16,7 +16,7 @@ const GROUP_LABELS: Record<string, string> = {
   Payment: '결제',
 };
 
-/** 실제로 받은 돈으로 세는 결제 상태. 승인만 된 카드는 아직 우리 돈이 아니다. */
+/** Payment states counted as money received. An authorisation is not ours yet. */
 const SETTLED: PaymentStatus[] = [PaymentStatus.CAPTURED, PaymentStatus.REFUNDED];
 
 const ZERO = new Prisma.Decimal(0);
@@ -30,23 +30,23 @@ interface CodeRow {
   net: Prisma.Decimal;
   serviceCharge: Prisma.Decimal;
   vat: Prisma.Decimal;
-  /** 거래 코드 설정에 없는 코드. 어디로 분개할지 사람이 정해야 한다. */
+  /** A code missing from the transaction code setup. A person has to place it. */
   unmapped: boolean;
 }
 
 /**
- * 회계 마감 분개.
+ * Accounting close journal.
  *
- * 그날 폴리오에 올라간 금액을 거래 코드별로 모으고, 표시가격에서 공급가액·
- * 봉사료·부가세를 갈라낸다. 국내 호텔은 세금을 포함한 값으로 팔기 때문에
- * 세금을 따로 더하지 않고 나누는 것이 맞다 — 더하면 손님에게 안내한 금액과
- * 청구가 달라진다.
+ * Sums the day's folio postings by transaction code and splits the displayed price
+ * into net, service charge and VAT. Korean hotels sell tax-inclusive prices, so
+ * dividing rather than adding is right — adding would make the charge differ from
+ * the amount quoted to the guest.
  *
- * 분류의 기준(매출 그룹·세율)은 OPERA 의 거래 코드 설정이다. 우리가 따로 표를
- * 들고 있으면 OPERA 에서 세율을 고쳤을 때 두 시스템의 마감이 갈린다.
+ * The basis for classification (revenue group and tax rates) is OPERA's transaction
+ * code setup. Our own table would split the two closes whenever OPERA changes a rate.
  *
- * 이 리포트는 로컬 사본에서 계산한 값이다. 세무 신고에 쓰는 공식 수치는 OPERA 의
- * 마감 리포트를 따라야 한다 — 여기 값은 그날의 돈이 맞는지 보기 위한 것이다.
+ * This report is computed from the local copy. Official figures for tax filing must
+ * follow OPERA's close reports — these are for checking the day's money.
  */
 @Injectable()
 export class JournalService {
@@ -80,7 +80,7 @@ export class JournalService {
         },
         select: { method: true, amount: true, refundedAmount: true },
       }),
-      // 전일까지 쌓인 잔액. 포스팅 합계가 곧 미수다.
+      // Balance carried in from the previous day. The sum of postings is what is owed.
       this.prisma.posting.aggregate({
         where: {
           folio: { reservation: { propertyId: property.id } },
@@ -97,7 +97,7 @@ export class JournalService {
     for (const posting of postings) {
       const amount = posting.amount;
 
-      // 결제는 매출이 아니다. 분개에서 갈라 두지 않으면 매출이 결제만큼 깎인다.
+      // Payments are not revenue. Left unsplit, revenue drops by the payments.
       if (posting.type === PostingType.PAYMENT) {
         paymentTotal = paymentTotal.add(amount.negated());
         continue;
@@ -139,10 +139,10 @@ export class JournalService {
     const closingBalance = openingBalance.add(chargeTotal).sub(paymentTotal);
 
     /*
-     * 대사.
+     * Reconciliation.
      *
-     * 계산한 마감 잔액과 실제 열린 폴리오 잔액의 합이 같아야 한다. 다르면 어딘가
-     * 포스팅이 새고 있다는 뜻이라, 그 사실을 숫자로 드러내 둔다.
+     * The computed closing balance must equal the sum of open folio balances. A
+     * difference means postings are leaking somewhere, so it is stated as a number.
      */
     const openFolios = await this.prisma.folio.aggregate({
       where: { reservation: { propertyId: property.id }, status: 'OPEN' },
@@ -153,7 +153,7 @@ export class JournalService {
     const paymentsByMethod = new Map<string, { count: number; amount: Prisma.Decimal }>();
     for (const payment of payments) {
       const current = paymentsByMethod.get(payment.method) ?? { count: 0, amount: ZERO };
-      // 환불한 만큼은 받은 돈이 아니다.
+      // Refunded amounts are not money received.
       const net = payment.amount.sub(payment.refundedAmount);
       paymentsByMethod.set(payment.method, {
         count: current.count + 1,
@@ -199,14 +199,14 @@ export class JournalService {
         charges: chargeTotal.toFixed(2),
         payments: paymentTotal.toFixed(2),
         closingBalance: closingBalance.toFixed(2),
-        /** 열린 폴리오 잔액의 합. 마감 잔액과 같아야 한다. */
+        /** Sum of open folio balances. Must match the closing balance. */
         outstanding: outstanding.toFixed(2),
         balanced: closingBalance.equals(outstanding),
       },
     };
   }
 
-  /** 거래 코드 설정. 중지한 코드도 읽는다 — 지난 마감에는 그 코드가 남아 있다. */
+  /** Transaction code setup. Inactive codes too — past closes still carry them. */
   private async loadCodes(property: Property): Promise<Map<string, CoreTransactionCode>> {
     const result = await this.core.listTransactionCodes(property.operaHotelId, true);
     return new Map(result.items.map((row) => [row.transactionCode, row]));
@@ -245,19 +245,19 @@ function serialize(row: CodeRow) {
 }
 
 /**
- * 표시가격을 공급가액·봉사료·부가세로 나눈다.
+ * Splits a displayed price into net, service charge and VAT.
  *
- * 봉사료가 먼저 붙고 그 합에 부가세가 붙는다. 그래서 거꾸로 풀 때도 같은 순서를
- * 거슬러 올라간다: gross = net × (1+봉사료율) × (1+부가세율).
+ * Service charge applies first and VAT applies to that sum, so unwinding follows
+ * the same order in reverse: gross = net × (1+svc) × (1+vat).
  *
- * 세 값을 각자 반올림하면 합이 원래 금액과 어긋난다. 부가세는 빼기로 맞춰
- * 합계가 항상 표시가격과 같게 둔다 — 1원이라도 어긋나면 마감이 안 맞는다.
+ * Rounding all three separately makes them miss the original. VAT is derived by
+ * subtraction so the parts always sum to the gross — a single won off breaks the close.
  */
 function decompose(
   gross: Prisma.Decimal,
   config: CoreTransactionCode | undefined,
 ): { net: Prisma.Decimal; serviceCharge: Prisma.Decimal; vat: Prisma.Decimal } {
-  // 설정이 없거나 세금이 별도인 코드는 나누지 않는다. 나누면 없는 세금을 지어낸다.
+  // Codes with no setup or with tax excluded are not split. Splitting invents tax.
   if (!config || !config.taxInclusive || (config.vatRate === 0 && config.serviceChargeRate === 0)) {
     return { net: gross, serviceCharge: ZERO, vat: ZERO };
   }

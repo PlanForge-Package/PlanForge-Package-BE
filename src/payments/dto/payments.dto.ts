@@ -23,10 +23,10 @@ export class AuthorizePaymentDto {
   amount!: number;
 
   /**
-   * 단말·결제창이 PG 에서 받아 온 일회성 토큰.
+   * One-time token the terminal or payment window got from the PSP.
    *
-   * **카드 번호가 아니다.** 번호를 여기로 받으면 이 시스템이 카드 정보 보관
-   * 설비가 되고 책임 범위가 달라진다.
+   * **Not a card number.** Accepting numbers here turns this system into card-data
+   * storage and changes what a leak means.
    */
   @ApiPropertyOptional({ description: 'PG 결제 토큰. 카드 결제에만 필요합니다.' })
   @IsOptional()
@@ -35,10 +35,10 @@ export class AuthorizePaymentDto {
   paymentToken?: string;
 
   /**
-   * 요청 멱등키.
+   * Request idempotency key.
    *
-   * 재전송되면 같은 카드로 두 번 긁힌다. 손님 돈이 두 번 나가는 일은 그 무엇보다
-   * 되돌리기 어렵다.
+   * A resend charges the same card twice. Money leaving a guest twice is harder to
+   * undo than anything else here.
    */
   @ApiProperty({ description: '재전송 시 중복 결제를 막습니다.' })
   @IsString()

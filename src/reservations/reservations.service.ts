@@ -18,17 +18,17 @@ import { parseDateOnly, toReservationStatus } from '../sync/reservation.mapper';
 import type { CheckInDto, CheckOutDto } from './dto/front-desk.dto';
 import type { ListReservationsDto } from './dto/list-reservations.dto';
 
-/** 체크인을 허용하는 출발 상태. */
+/** Statuses a check-in may start from. */
 const CHECK_IN_ALLOWED: ReservationStatus[] = [
   ReservationStatus.RESERVED,
   ReservationStatus.CONFIRMED,
 ];
 
 /**
- * OPERA 에 없는 예약은 프론트데스크 처리를 할 수 없다.
+ * Front-desk actions need the reservation to exist in OPERA.
  *
- * 로컬만 바꾸면 OPERA 는 손님이 오지 않은 것으로 알고 있고, 그 방을 다른
- * 예약에 배정한다. 동기화가 먼저다.
+ * Changed locally only, OPERA still believes the guest never arrived and assigns
+ * that room to someone else. Sync comes first.
  */
 function assertLinked(operaReservationId: string | null): string {
   if (!operaReservationId) {
@@ -115,22 +115,22 @@ export class ReservationsService {
       throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
     }
 
-    // 목록은 범위로 걸러지지만 단건은 ID 만 알면 닿는다. 확인 번호나 URL 이
-    // 새어 나가는 것만으로 남의 호텔 예약이 열리면 안 된다.
+    // Lists are filtered by scope, but one record is reachable from its id alone.
+    // A leaked confirmation number or URL must not open another hotel's reservation.
     assertWithinScope(user, reservation.propertyId);
     return reservation;
   }
 
   /**
-   * 체크인.
+   * Check-in.
    *
-   * 어느 방에 손님이 들어갔는지는 재고 그 자체라 OPERA 가 알아야 한다. 로컬에만
-   * 적어 두면 OPERA 는 그 방을 여전히 빈 방으로 보고 다른 예약에 배정한다.
+   * Which room the guest walked into is inventory itself, so OPERA has to know.
+   * Recorded locally only, OPERA still sees the room free and assigns it again.
    *
-   * 그래서 순서가 정해져 있다. 로컬에서 명백히 틀린 요청을 먼저 걸러 내고,
-   * 바뀐 객실의 카드를 죽인 뒤, OPERA 에 체크인을 위임하고, 돌아온 결과만
-   * 옮겨 적는다. 외부 호출을 트랜잭션 안에 두지 않는 이유는 응답이 늦으면
-   * 그동안 DB 트랜잭션이 열려 있기 때문이다.
+   * Hence the fixed order: reject obviously wrong requests locally, kill the keys
+   * for a changed room, delegate the check-in to OPERA, then copy back only what
+   * came in reply. The external call stays out of the transaction because a slow
+   * response would hold a DB transaction open for its duration.
    */
   async checkIn(id: string, dto: CheckInDto, user: AuthUser): Promise<Reservation> {
     const reservation = await this.prisma.reservation.findUnique({
@@ -160,10 +160,10 @@ export class ReservationsService {
       throw new NotFoundException(`객실을 찾을 수 없습니다: ${roomNumber}`);
     }
     /*
-     * 이미 사용 중인 방에는 넣지 않는다.
+     * A room already in use is not assigned again.
      *
-     * 객실을 함께 쓰기로 한 예약은 예외다 — 두 손님이 한 방을 쓰되 계산만
-     * 따로 하는 편성이 공유다. OPERA 도 같은 규칙으로 판단한다.
+     * Shares are the exception — two guests in one room settling separately is
+     * exactly what a share is. OPERA applies the same rule.
      */
     if (room.occupied && reservation.assignedRoomNumber !== roomNumber) {
       const sharing = reservation.shareGroupId
@@ -187,11 +187,11 @@ export class ReservationsService {
     }
 
     /*
-     * 객실이 바뀌면 이전 방 카드를 먼저 죽인다.
+     * On a room change, the old room's keys are killed first.
      *
-     * 남겨 두면 손님이 예전 방 문을 계속 열 수 있고, 그 방에는 곧 다른 손님이
-     * 들어온다. OPERA 호출보다 앞에 두는 이유는, 카드를 못 죽였으면 객실을
-     * 바꾸지도 말아야 하기 때문이다.
+     * Left alive, the guest keeps opening the old door, and another guest moves in
+     * there shortly. It runs before the OPERA call because failing to kill a key
+     * must also mean the room is not changed.
      */
     if (reservation.assignedRoomNumber && reservation.assignedRoomNumber !== roomNumber) {
       await this.doorLock.revokeActive(
@@ -214,7 +214,7 @@ export class ReservationsService {
       throw error;
     }
 
-    // OPERA 가 확정한 상태와 객실을 그대로 반영한다. 우리가 보낸 값이 아니다.
+    // The status and room OPERA confirmed are copied over, not the ones we sent.
     const assignedRoomNumber = confirmed.roomNumber ?? roomNumber;
 
     return this.prisma.$transaction(async (tx) => {
@@ -223,7 +223,7 @@ export class ReservationsService {
         data: { occupied: true },
       });
 
-      // 폴리오가 없을 때만 만든다 — 재체크인 시 기존 거래 내역을 잃지 않도록.
+      // Created only when absent — a re-check-in must not lose existing transactions.
       await tx.folio.upsert({
         where: { reservationId_window: { reservationId: id, window: 1 } },
         update: {},
@@ -242,10 +242,10 @@ export class ReservationsService {
   }
 
   /**
-   * 체크아웃.
+   * Check-out.
    *
-   * 미결제 잔액이 남아 있으면 막는다 — 회계상 잔액이 있는 폴리오를 닫으면
-   * 매출 누락으로 이어진다.
+   * An outstanding balance blocks it — closing a folio that still owes money leads
+   * straight to missing revenue.
    */
   async checkOut(id: string, dto: CheckOutDto, user: AuthUser): Promise<Reservation> {
     const reservation = await this.prisma.reservation.findUnique({
@@ -273,11 +273,11 @@ export class ReservationsService {
     const operaId = assertLinked(reservation.operaReservationId);
 
     /*
-     * 나가는 손님의 카드를 반드시 죽인다.
+     * The departing guest's keys are always killed.
      *
-     * 이 도메인에서 가장 위험한 실패다 — 살려 두면 체크아웃한 손님이 다음
-     * 손님이 들어온 방을 연다. OPERA 호출보다 앞에 두어, 카드를 못 죽였으면
-     * 체크아웃 자체가 일어나지 않게 한다.
+     * The most dangerous failure in this domain — left alive, a departed guest opens
+     * the room the next guest is in. It runs before the OPERA call so that a key we
+     * could not kill stops the check-out from happening at all.
      */
     await this.doorLock.revokeActive(id, '체크아웃');
 
@@ -295,11 +295,11 @@ export class ReservationsService {
     }
 
     /*
-     * 폴리오 마감도 OPERA 가 한다.
+     * OPERA closes the folio too.
      *
-     * 로컬만 닫으면 OPERA 의 계산서는 열려 있어 요금이 계속 붙을 수 있다.
-     * 체크아웃 자체는 위에서 이미 확정됐으므로, 마감에 실패해도 되돌리지 않고
-     * 로그에 남긴다 — 손님은 이미 나갔고 상태를 되돌리는 편이 더 위험하다.
+     * Closed locally only, OPERA's bill stays open and charges can keep landing.
+     * The check-out itself is already settled above, so a failed close is logged
+     * rather than rolled back — the guest has left and reverting is riskier.
      */
     for (const folio of reservation.folios.filter((f) => f.status === FolioStatus.OPEN)) {
       try {
@@ -319,7 +319,7 @@ export class ReservationsService {
       });
 
       if (reservation.assignedRoomNumber) {
-        // 체크아웃한 객실은 청소 대상으로 되돌린다.
+        // A checked-out room goes back to needing cleaning.
         await tx.room.updateMany({
           where: { propertyId: reservation.propertyId, number: reservation.assignedRoomNumber },
           data: { occupied: false, status: RoomStatus.DIRTY },
@@ -336,7 +336,7 @@ export class ReservationsService {
     });
   }
 
-  /** 당일 도착·출발·재실 요약. 프론트데스크 대시보드용. */
+  /** Today's arrivals, departures and in-house counts, for the front-desk dashboard. */
   async dailySummary(requestedPropertyId: string, date: string, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, requestedPropertyId);
     const day = parseDateOnly(date);

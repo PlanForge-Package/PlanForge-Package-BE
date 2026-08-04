@@ -123,7 +123,7 @@ export class UpdateAccountDto {
   active?: string;
 }
 
-/** 폴리오 잔액을 거래처로 넘긴다. */
+/** Transfers a folio balance to an account. */
 export class TransferToArDto {
   @ApiProperty({ description: '받을 거래처 ID' })
   @IsString()
@@ -142,7 +142,7 @@ export class TransferToArDto {
   description?: string;
 }
 
-/** 거래처 입금. */
+/** Account payment. */
 export class AllocationInputDto {
   @ApiProperty({ description: '붙일 청구서' })
   @IsString()
@@ -168,10 +168,10 @@ export class RecordArPaymentDto {
   description!: string;
 
   /**
-   * 어느 청구서에 얼마씩 붙일지.
+   * How much of the payment goes to which invoice.
    *
-   * 비우고 `autoApply` 를 켜면 만기가 빠른 청구서부터 채운다. 둘 다 없으면
-   * 배분하지 않고 잔액만 줄인다 — 나중에 사람이 붙일 수 있다.
+   * Left empty with `autoApply` on, the earliest-due invoices are filled first. With
+   * neither, nothing is allocated and only the balance drops — a person can apply it later.
    */
   @ApiPropertyOptional({ type: [AllocationInputDto] })
   @IsOptional()

@@ -18,10 +18,10 @@ import {
 import { RatesService } from './rates.service';
 
 /**
- * 요금 코드·시즌·패키지.
+ * Rate codes, seasons and packages.
  *
- * 조회는 프론트도 한다 — 예약을 받으려면 무엇을 얼마에 파는지 봐야 한다.
- * 설정 변경은 매출에 직결되므로 지배인 이상만 한다.
+ * The front desk reads them too — taking a booking means seeing what sells at what
+ * price. Changing the setup moves revenue directly, so managers and above only.
  */
 @ApiTags('rates')
 @ApiBearerAuth()

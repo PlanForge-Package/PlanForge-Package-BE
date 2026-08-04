@@ -27,20 +27,20 @@ const TRACE_INCLUDE = {
 } satisfies Prisma.ReservationTraceInclude;
 
 /**
- * 트레이스 — 예약에 붙는 부서별 지시.
+ * Trace — a departmental instruction attached to a reservation.
  *
- * "도착일 07:00 하우스키핑 — 유아용 침대" 처럼 특정 날짜에 특정 부서가 해야 할
- * 일이다. 예약 메모에 적어 두면 그 부서가 예약을 열어 보지 않는 한 아무도
- * 읽지 않는다. 날짜와 부서로 모아 볼 수 있어야 지시가 실제로 전달된다.
+ * "07:00 on arrival, housekeeping — crib": work a given department must do on a
+ * given date. Written in the reservation notes, nobody reads it unless that
+ * department opens the reservation. Grouping by date and department delivers it.
  *
- * 이 지시는 우리 직원의 근무 편성이라 OPERA 에 보내지 않는다 — 하우스키핑
- * 배정과 같은 이유다.
+ * These are our own staff scheduling and do not go to OPERA — same reason as
+ * housekeeping assignment.
  */
 @Injectable()
 export class TracesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** 날짜·부서로 모아 본다. 부서 화면이 아침에 여는 목록이다. */
+  /** Grouped by date and department. The list a department opens in the morning. */
   async list(query: ListTracesDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, query.propertyId);
     const date = parseDateOnly(query.date ?? today());
@@ -59,7 +59,7 @@ export class TracesService {
     return { date: query.date ?? today(), items, total: items.length };
   }
 
-  /** 한 예약에 걸린 지시 전부. 지난 것도 함께 본다 — 무엇을 했는지가 이력이다. */
+  /** Every instruction on a reservation, past ones too — what was done is the history. */
   async listByReservation(reservationId: string, user: AuthUser) {
     await this.loadReservation(reservationId, user);
 
@@ -80,10 +80,10 @@ export class TracesService {
     const reservation = await this.loadReservation(reservationId, user);
 
     /*
-     * 출발일보다 뒤인 지시는 아무도 보지 않는다.
+     * An instruction after the departure date is seen by nobody.
      *
-     * 손님이 나간 뒤의 날짜로 잡으면 그 부서의 그날 목록에는 뜨지만 대상이
-     * 이미 없다. 도착 전 준비는 있을 수 있으므로 앞쪽은 막지 않는다.
+     * Dated after the guest leaves, it shows on that department's list for the day
+     * but the subject is gone. Pre-arrival prep is valid, so earlier is allowed.
      */
     const dueDate = parseDateOnly(dto.dueDate);
     if (dueDate > reservation.departureDate) {
@@ -105,7 +105,7 @@ export class TracesService {
     });
   }
 
-  /** 처리 완료. 누가 했는지 남긴다 — 안 된 일을 두고 서로 묻게 되기 때문이다. */
+  /** Completion. Who did it is recorded — otherwise undone work turns into questions. */
   async complete(id: string, user: AuthUser): Promise<ReservationTrace> {
     const trace = await this.prisma.reservationTrace.findUnique({ where: { id } });
     if (!trace) {
@@ -125,10 +125,10 @@ export class TracesService {
   }
 
   /**
-   * 지시 삭제.
+   * Instruction delete.
    *
-   * 처리된 지시는 지우지 않는다 — 무엇을 했는지가 이력이고, 지우면 "안 했다"
-   * 와 구분되지 않는다. 잘못 건 지시만 거둔다.
+   * A completed instruction is never deleted — what was done is the history, and
+   * deleting it becomes indistinguishable from "not done". Only mistakes are withdrawn.
    */
   async remove(id: string, user: AuthUser) {
     const trace = await this.prisma.reservationTrace.findUnique({ where: { id } });
@@ -162,7 +162,7 @@ function toDateString(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
-/** 오늘(UTC). @db.Date 컬럼과 같은 기준을 쓴다. */
+/** Today in UTC, the same basis as @db.Date columns. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }

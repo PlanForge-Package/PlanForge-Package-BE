@@ -8,7 +8,7 @@ import { SyncService, type SyncReservationsResult } from './sync.service';
 
 @ApiTags('sync')
 @ApiBearerAuth()
-// OPERA 동기화는 대량 쓰기라 매니저 이상만 돌린다.
+// OPERA sync is a bulk write, so managers and above only.
 @Roles(UserRole.MANAGER)
 @Controller('sync')
 export class SyncController {

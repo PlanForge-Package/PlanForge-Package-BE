@@ -8,24 +8,24 @@ import {
 } from './payment.driver';
 
 /**
- * 모의 PG.
+ * Mock PSP.
  *
- * 가맹점 자격 증명 없이도 승인·매입·취소·환불 흐름 전체를 개발·검증하기 위해
- * 둔다. **실제로 돈이 오가지 않는다.**
+ * Lets the whole authorise, capture, void and refund flow be developed and verified
+ * without merchant credentials. **No money actually moves.**
  *
- * 토큰 접두사로 결과를 정할 수 있게 해 두었다. 거절 경로를 실제로 태워 보지
- * 않으면 화면이 그 상황을 제대로 다루는지 알 수 없기 때문이다.
+ * The outcome can be chosen by token prefix. Without actually exercising the decline
+ * paths there is no telling whether the screens handle them.
  *
- * - `tok_decline_*` → 거절
- * - `tok_timeout_*` → 결과 불명
- * - 그 밖 → 승인
+ * - `tok_decline_*` → declined
+ * - `tok_timeout_*` → outcome unknown
+ * - anything else → authorised
  */
 @Injectable()
 export class MockPaymentDriver implements PaymentDriver {
   readonly mode = 'mock' as const;
   private readonly logger = new Logger(MockPaymentDriver.name);
 
-  /** 승인된 거래. 프로세스가 살아 있는 동안만 유지된다. */
+  /** Authorised transactions. Kept only for the life of the process. */
   private readonly transactions = new Map<string, { amount: string; captured: boolean }>();
 
   async authorize(request: AuthorizeRequest): Promise<AuthorizeResult> {
@@ -56,7 +56,7 @@ export class MockPaymentDriver implements PaymentDriver {
     if (txn.captured) {
       throw new PaymentError('이미 매입된 거래입니다.', true);
     }
-    // 실제 PG 도 승인액을 넘는 매입은 거절한다.
+    // A real PSP also refuses a capture above the authorised amount.
     if (Number(amount) > Number(txn.amount)) {
       throw new PaymentError('승인액을 초과하는 매입은 할 수 없습니다.', true);
     }
@@ -90,7 +90,7 @@ export class MockPaymentDriver implements PaymentDriver {
     this.logger.debug(`모의 환불: ${vendorTxnId} ${amount}`);
   }
 
-  /** 테스트가 상태를 초기화할 때 쓴다. */
+  /** Used by tests to reset the state. */
   reset(): void {
     this.transactions.clear();
   }

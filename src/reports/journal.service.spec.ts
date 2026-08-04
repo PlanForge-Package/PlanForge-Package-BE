@@ -98,7 +98,7 @@ async function buildService(
 const QUERY = { date: '2026-08-04' };
 
 describe('JournalService — 세금 분해', () => {
-  // 220,000 = 공급가액 200,000 + 부가세 20,000. 봉사료는 객실에 붙지 않는다.
+  // 220,000 = net 200,000 + VAT 20,000. Rooms carry no service charge.
   it('부가세만 붙는 코드는 공급가액과 부가세로 나뉜다', async () => {
     const prisma = buildPrisma({
       posting: {
@@ -116,7 +116,7 @@ describe('JournalService — 세금 분해', () => {
     expect(room?.serviceCharge).toBe('0.00');
   });
 
-  // 봉사료가 먼저 붙고 그 합에 부가세가 붙는다: 100,000 × 1.1 × 1.1 = 121,000.
+  // Service charge applies first, then VAT on the sum: 100,000 x 1.1 x 1.1 = 121,000.
   it('봉사료가 있는 코드는 봉사료·부가세를 갈라낸다', async () => {
     const prisma = buildPrisma({
       posting: {
@@ -134,7 +134,7 @@ describe('JournalService — 세금 분해', () => {
     expect(fnb?.vat).toBe('11000.00');
   });
 
-  // 1원이라도 어긋나면 마감이 안 맞는다.
+  // A single won off breaks the close.
   it('나눈 값의 합은 언제나 표시가격과 같다', async () => {
     const prisma = buildPrisma({
       posting: {
@@ -191,7 +191,7 @@ describe('JournalService — 세금 분해', () => {
 });
 
 describe('JournalService — 매출과 결제', () => {
-  // 결제를 매출로 세면 매출이 결제만큼 깎인다.
+  // Counting payments as revenue shrinks revenue by the payments.
   it('결제 포스팅은 매출에 넣지 않는다', async () => {
     const prisma = buildPrisma({
       posting: {
@@ -265,7 +265,7 @@ describe('JournalService — 대사', () => {
     expect(result.ledger.balanced).toBe(true);
   });
 
-  // 다르면 어딘가 포스팅이 새고 있다는 뜻이다. 숨기지 않고 드러낸다.
+  // A difference means postings are leaking somewhere. It is surfaced, not hidden.
   it('열린 폴리오 잔액과 다르면 어긋났다고 알린다', async () => {
     const prisma = buildPrisma({
       posting: {
@@ -311,7 +311,7 @@ describe('JournalService — 범위', () => {
     await expect(service.daily(QUERY, ACTOR)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  // 지난 마감에는 지금 중지한 코드가 남아 있다. 이름 없이 숫자만 남으면 못 읽는다.
+  // Past closes carry codes since deactivated. Numbers without names cannot be read.
   it('중지한 거래 코드까지 읽어 온다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();

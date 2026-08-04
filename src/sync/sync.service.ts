@@ -9,9 +9,9 @@ export interface SyncReservationsInput {
   hotelId: string;
   arrivalDate?: string;
   departureDate?: string;
-  /** Core 를 페이지 단위로 훑을 때의 페이지 크기. */
+  /** Page size when walking Core page by page. */
   pageSize?: number;
-  /** 안전장치. 이 페이지 수를 넘으면 중단하고 로그에 남긴다. */
+  /** Safety stop. Past this many pages it aborts and logs. */
   maxPages?: number;
 }
 
@@ -24,7 +24,7 @@ export interface SyncReservationsResult {
   truncated: boolean;
 }
 
-/** Core 가 객실 타입을 주지 않은 예약에 임시로 붙이는 코드. */
+/** Placeholder code for reservations Core returned without a room type. */
 const UNKNOWN_ROOM_TYPE_CODE = 'UNKNOWN';
 
 @Injectable()
@@ -37,10 +37,10 @@ export class SyncService {
   ) {}
 
   /**
-   * Core 를 통해 OPERA 예약을 끌어와 로컬 DB 에 반영한다.
+   * Pulls OPERA reservations through Core into the local database.
    *
-   * 예약 한 건의 실패가 배치 전체를 멈추지 않도록 건별로 격리하고, 실패는
-   * SyncLog 에 남겨 나중에 재시도할 수 있게 한다.
+   * Each reservation is isolated so one failure does not stop the batch, and failures
+   * are written to SyncLog so they can be retried later.
    */
   async syncReservations(input: SyncReservationsInput): Promise<SyncReservationsResult> {
     const { hotelId, arrivalDate, departureDate, pageSize = 100, maxPages = 50 } = input;
@@ -123,7 +123,7 @@ export class SyncService {
     }
   }
 
-  /** 호텔 코드에 해당하는 Property 가 없으면 최소 정보로 만든다. */
+  /** Creates a Property with minimal details when the hotel code has none. */
   private async ensureProperty(operaHotelId: string) {
     return this.prisma.property.upsert({
       where: { operaHotelId },
@@ -197,8 +197,8 @@ export class SyncService {
   }
 
   /**
-   * OPERA profileId 로 먼저 찾고, 없으면 이메일로 기존 프로필을 재사용한다.
-   * 둘 다 없으면 새로 만든다 — 예약 동기화가 프로필 부재로 실패하지 않게 한다.
+   * Matched first by OPERA profileId, then reusing an existing profile by email.
+   * Failing both, a new one is created — a missing profile must not fail the sync.
    */
   private async ensureProfile(source: CoreReservation) {
     const guest = source.guest;

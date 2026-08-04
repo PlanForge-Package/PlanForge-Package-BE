@@ -59,7 +59,7 @@ describe('AuthService', () => {
         role: UserRole.FRONT_DESK,
         propertyId: 'prop-1',
       });
-      // 해시는 절대 밖으로 나가지 않는다.
+      // The hash never leaves.
       expect(JSON.stringify(result)).not.toContain('$2');
       expect(jwt.signAsync).toHaveBeenCalledWith(
         expect.objectContaining({ sub: 'user-1', role: UserRole.FRONT_DESK }),

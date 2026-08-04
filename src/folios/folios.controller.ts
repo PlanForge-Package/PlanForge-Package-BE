@@ -15,7 +15,7 @@ import { FoliosService } from './folios.service';
 
 @ApiTags('folios')
 @ApiBearerAuth()
-// 회계 거래는 프론트데스크와 매니저만 다룬다.
+// Accounting transactions are handled by the front desk and managers only.
 @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
 @Controller('reservations/:reservationId/folios')
 export class FoliosController {
@@ -38,10 +38,10 @@ export class FoliosController {
   }
 
   /*
-   * 보증금은 창구 번호를 받지 않는다.
+   * A deposit takes no window number.
    *
-   * 도착 전에는 1번 창구뿐이고, 없으면 OPERA 가 연다. 번호를 고르게 두면 아직
-   * 열리지도 않은 창구를 지정하는 실수가 생긴다.
+   * Before arrival there is only window 1, and OPERA opens it if absent. Letting a
+   * number be chosen invites naming a window that is not open yet.
    */
   @Post('deposit')
   @ApiOperation({ summary: '보증금 수납 — 도착 전에도 폴리오에 결제로 올립니다' })

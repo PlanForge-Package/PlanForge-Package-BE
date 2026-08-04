@@ -22,13 +22,13 @@ import type {
 } from './dto/booking.dto';
 
 /**
- * 예약 생성·수정·취소.
+ * Reservation create, update and cancel.
  *
- * OPERA 가 기록의 원천이다. 재고 판단·요금 계산·확인 번호 발급을 여기서 하지
- * 않고 Core 를 통해 OPERA 에 맡긴 뒤, 돌아온 결과를 로컬에 미러링한다.
+ * OPERA is the system of record. Inventory, pricing and confirmation numbers are
+ * decided by OPERA through Core, and the result is mirrored locally.
  *
- * 두 시스템이 각자 계산하면 언젠가 값이 갈리고, 회계 데이터에서 그건 어느 쪽이
- * 맞는지 판단할 근거가 없다는 뜻이다. 그래서 로컬 레코드는 캐시로 다룬다.
+ * Two systems computing separately eventually disagree, and in accounting data
+ * there is no way to tell which side is right. So local rows are a cache.
  */
 @Injectable()
 export class BookingService {
@@ -39,7 +39,7 @@ export class BookingService {
     private readonly core: CoreClient,
   ) {}
 
-  /** 가용 재고. 계산하지 않고 OPERA 에 묻는다. */
+  /** Availability. Asked of OPERA rather than computed. */
   async checkAvailability(dto: CheckAvailabilityDto, user: AuthUser) {
     const property = await this.resolveProperty(dto.propertyId, user);
     this.assertDateRange(dto.arrivalDate, dto.departureDate);
@@ -55,7 +55,7 @@ export class BookingService {
     return { propertyId: property.id, ...result };
   }
 
-  /** 기간 요금. 마찬가지로 OPERA 가 정한다. */
+  /** Rates for a date range. Decided by OPERA as well. */
   async getRates(dto: CheckAvailabilityDto, user: AuthUser) {
     const property = await this.resolveProperty(dto.propertyId, user);
     this.assertDateRange(dto.arrivalDate, dto.departureDate);
@@ -64,7 +64,7 @@ export class BookingService {
       hotelId: property.operaHotelId,
       arrivalDate: dto.arrivalDate,
       departureDate: dto.departureDate,
-      // 1인당 붙는 패키지가 있다. 인원을 빼면 안내 금액과 청구가 갈린다.
+      // Some packages are per person. Omitting the count splits quote from charge.
       adults: dto.adults,
     });
 
@@ -145,10 +145,10 @@ export class BookingService {
       const mirrored = await this.mirror(property, cancelled, dto.reason);
 
       /*
-       * 위약금이 붙었으면 폴리오를 다시 읽는다.
+       * Re-read the folio when a penalty was charged.
        *
-       * OPERA 는 취소하며 폴리오에 청구를 단다. 옮겨 적지 않으면 우리 화면에는
-       * 없는 청구가 저쪽에만 남아, 받을 돈이 있는 줄도 모르게 된다.
+       * OPERA posts the charge while cancelling. Without copying it over, the
+       * charge exists only there and we never know money is owed.
        */
       if (cancelled.cancellationPenalty && cancelled.cancellationPenalty > 0) {
         const folios = await this.core.listFolios(cancelled.reservationId);
@@ -166,11 +166,11 @@ export class BookingService {
   }
 
   /**
-   * 취소 조건과 보증금.
+   * Cancellation terms and deposit.
    *
-   * 취소하기 전에 손님에게 알려야 하는 값이다. 물리고 나서 통보하면 그건 통보가
-   * 아니라 사후 정산이다. 계산은 OPERA 가 한다 — 규정이 요금에 붙어 있고, 우리가
-   * 따로 계산하면 실제로 물리는 금액과 갈린다.
+   * The guest has to hear this before we cancel. Telling them after charging is
+   * a settlement, not a notice. OPERA computes it — the rules hang off the rate,
+   * and computing our own would diverge from what is actually charged.
    */
   async policies(id: string, user: AuthUser) {
     const { reservation, property } = await this.loadLinked(id, user);
@@ -178,11 +178,11 @@ export class BookingService {
       reservation.operaReservationId!,
       property.operaHotelId,
     );
-    // 화면은 로컬 id 로 다시 부르므로 그쪽을 남긴다.
+    // The screen calls back with the local id, so that is what we return.
     return { ...result, reservationId: reservation.id };
   }
 
-  /** 보증 방식 변경. 노쇼를 어떻게 다룰지가 여기서 갈린다. */
+  /** Guarantee change. It decides how a no-show is handled. */
   async setGuarantee(id: string, guaranteeCode: string, user: AuthUser): Promise<Reservation> {
     const { reservation, property } = await this.loadLinked(id, user);
 
@@ -207,11 +207,11 @@ export class BookingService {
   }
 
   /**
-   * 노쇼 처리.
+   * No-show.
    *
-   * 취소와 같은 상태 전이지만 회계상 의미가 다르다 — 노쇼는 수수료를 청구할 수
-   * 있고 다음 시즌 오버부킹 예측에도 쓰인다. 그래서 취소로 뭉뚱그리지 않는다.
-   * 도착일이 지났는지, 이미 들어온 손님은 아닌지는 OPERA 가 판단한다.
+   * The same state transition as a cancel but different in accounting — a no-show
+   * can be charged a fee and feeds next season's overbooking forecast. So it is
+   * not folded into cancel. OPERA judges the arrival date and whether the guest is in.
    */
   async noShow(id: string, reason: string | undefined, user: AuthUser): Promise<Reservation> {
     const { reservation, property } = await this.loadLinked(id, user);
@@ -235,10 +235,10 @@ export class BookingService {
   // ---------------------------------------------------------------------------
 
   /**
-   * OPERA 결과를 로컬에 반영한다.
+   * Mirrors the OPERA result locally.
    *
-   * 로컬 값은 캐시이므로 OPERA 가 준 것을 그대로 덮어쓴다. 우리가 보낸 값이
-   * 아니라 OPERA 가 확정한 값을 기준으로 삼아야 두 쪽이 갈리지 않는다.
+   * Local values are a cache, so what OPERA returned is written verbatim. Taking
+   * OPERA's confirmed values rather than ours is what keeps the two in step.
    */
   private async mirror(
     property: Property,
@@ -289,13 +289,13 @@ export class BookingService {
   }
 
   /**
-   * 이미 아는 손님이면 그 OPERA 프로필 ID 를 함께 보낸다.
+   * Sends the OPERA profile id when the guest is already known.
    *
-   * 보내지 않으면 OPERA 가 매번 새 프로필을 만든다. 재방문 손님마다 프로필이
-   * 하나씩 늘어나고, 투숙 이력과 선호가 여러 프로필로 흩어져 결국 사람이 손으로
-   * 병합해야 한다. 만들지 않는 편이 지우는 것보다 훨씬 싸다.
+   * Without it OPERA creates a new profile every time. Each returning guest gains
+   * another profile, stay history and preferences scatter across them, and someone
+   * ends up merging by hand. Not creating is far cheaper than deleting.
    *
-   * 이메일이 유일한 단서다. 이름은 동명이인이 흔해 근거로 쓸 수 없다.
+   * Email is the only clue. Names repeat too often to match on.
    */
   private async knownProfileId(email?: string): Promise<string | undefined> {
     if (!email) return undefined;
@@ -304,7 +304,7 @@ export class BookingService {
       where: {
         email: { equals: email.trim(), mode: Prisma.QueryMode.insensitive },
         operaProfileId: { not: null },
-        // 병합된 프로필로 붙이면 방금 정리한 중복이 되살아난다.
+        // Attaching a merged profile revives the duplicate just cleaned up.
         mergedIntoId: null,
       },
       select: { operaProfileId: true },
@@ -315,10 +315,10 @@ export class BookingService {
   }
 
   /**
-   * 대기 확정.
+   * Waitlist confirmation.
    *
-   * 자리가 났는지는 확정하는 순간 OPERA 가 세어 본다. 우리가 미리 판단하면 그
-   * 사이 다른 대기 건이 먼저 확정된 경우를 놓친다.
+   * OPERA counts availability at the moment of confirming. Deciding ahead of it
+   * misses the case where another waitlisted booking was confirmed in between.
    */
   async confirmWaitlist(id: string, user: AuthUser): Promise<Reservation> {
     const { reservation, property } = await this.loadLinked(id, user);
@@ -346,17 +346,17 @@ export class BookingService {
   }
 
   /**
-   * 객실 공유.
+   * Room share.
    *
-   * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 겹치는 기간·같은 객실
-   * 타입인지, 이미 다른 방에 들어가 있지는 않은지는 OPERA 가 본다 — 재고와
-   * 객실 배정을 아는 쪽이 판단해야 한다.
+   * Two guests in one room settling separately. Whether the dates overlap, the
+   * room types match and neither is already in another room is OPERA's call —
+   * the side that knows inventory and room assignment has to decide.
    */
   async share(id: string, withReservationId: string, user: AuthUser): Promise<Reservation[]> {
     const { reservation, property } = await this.loadLinked(id, user);
     const { reservation: partner } = await this.loadLinked(withReservationId, user);
 
-    // 호텔이 다르면 같은 방을 쓸 수 없다. 외부 호출 전에 막는다.
+    // Different hotels cannot share a room. Blocked before the external call.
     if (partner.propertyId !== reservation.propertyId) {
       throw new BadRequestException('다른 호텔의 예약과는 객실을 함께 쓸 수 없습니다.');
     }
@@ -384,7 +384,7 @@ export class BookingService {
     }
   }
 
-  /** 공유 해제. 이 예약만 묶음에서 뺀다. */
+  /** Unshare. Removes only this reservation from the group. */
   async unshare(id: string, user: AuthUser): Promise<Reservation> {
     const { reservation, property } = await this.loadLinked(id, user);
 
@@ -404,10 +404,10 @@ export class BookingService {
       const mirrored = await this.mirror(property, updated);
 
       /*
-       * 혼자 남은 상대의 표시도 푼다.
+       * Clears the flag on the partner left alone.
        *
-       * OPERA 는 이미 풀었지만 그 예약은 이번 응답에 실려 오지 않는다. 사본에
-       * 남겨 두면 공유가 아닌데 공유로 보인다.
+       * OPERA already cleared it, but that reservation is not in this response.
+       * Left in our copy, it would look shared when it is not.
        */
       const remaining = await this.prisma.reservation.findMany({
         where: { shareGroupId: reservation.shareGroupId },
@@ -438,7 +438,7 @@ export class BookingService {
     }
     assertWithinScope(user, reservation.propertyId);
 
-    // OPERA 에 없는 예약은 여기서 고칠 수 없다. 로컬만 바꾸면 두 쪽이 갈린다.
+    // A reservation OPERA does not have cannot be fixed here; local-only diverges.
     if (!reservation.operaReservationId) {
       throw new BadRequestException(
         'OPERA 와 연결되지 않은 예약입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
@@ -462,10 +462,10 @@ export class BookingService {
   }
 
   /**
-   * 날짜 범위 검증.
+   * Date range validation.
    *
-   * OPERA 도 거절하지만 여기서 먼저 막는다 — 명백히 틀린 요청까지 외부 호출을
-   * 태우면 응답이 느려지고 OHIP 레이트리밋을 낭비한다.
+   * OPERA rejects it too, but we stop it first — sending obviously wrong requests
+   * out slows responses and burns OHIP rate limit.
    */
   private assertDateRange(arrival: string, departure: string): void {
     if (departure <= arrival) {
@@ -525,7 +525,7 @@ export class BookingService {
     });
   }
 
-  /** 쓰기는 전부 이력을 남긴다. OPERA 호출이 실패했을 때 무엇을 보냈는지 알아야 한다. */
+  /** Every write is logged. A failed OPERA call needs to show what we sent. */
   private startLog(entity: string, entityId: string | null, payload: unknown) {
     return this.prisma.syncLog.create({
       data: {

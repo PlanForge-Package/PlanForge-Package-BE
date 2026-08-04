@@ -8,10 +8,10 @@ import { CashierService } from './cashier.service';
 import { CloseShiftDto, ListShiftsDto, OpenShiftDto } from './dto/cashier.dto';
 
 /**
- * 캐셔 근무조.
+ * Cashier shifts.
  *
- * 돈을 받는 사람이 쓰는 화면이므로 프론트데스크와 지배인이 대상이다.
- * 지난 조 목록은 차이가 났을 때 되짚는 용도라 같은 범위로 둔다.
+ * The screen is used by whoever takes the money, so the front desk and managers.
+ * Past shifts are for tracing a discrepancy, so they keep the same scope.
  */
 @ApiTags('cashier')
 @ApiBearerAuth()

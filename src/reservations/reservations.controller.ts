@@ -19,7 +19,7 @@ import { ReservationsService } from './reservations.service';
 
 @ApiTags('reservations')
 @ApiBearerAuth()
-// 하우스키핑은 객실만 다루므로 예약에는 접근하지 않는다. ADMIN 은 가드가 항상 통과시킨다.
+// Housekeeping only handles rooms, so it has no reservation access. ADMIN always passes the guard.
 @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
 @Controller('reservations')
 export class ReservationsController {
@@ -28,9 +28,9 @@ export class ReservationsController {
     private readonly booking: BookingService,
   ) {}
 
-  // --- OPERA 위임 --------------------------------------------------------
-  // 재고와 요금은 계산하지 않고 OPERA 에 묻는다. 두 시스템이 각자 계산하면
-  // 언젠가 값이 갈리고, 그때 어느 쪽이 맞는지 판단할 근거가 없다.
+  // --- Delegated to OPERA ------------------------------------------------
+  // Inventory and rates are asked of OPERA rather than computed. Two systems
+  // computing separately eventually disagree, with no way to tell which is right.
 
   @Get('availability')
   @ApiOperation({ summary: '가용 재고 조회 (OPERA)' })
@@ -62,7 +62,7 @@ export class ReservationsController {
     return this.booking.cancel(id, dto, user);
   }
 
-  // 취소하기 전에 손님에게 알려야 하는 값이다. 물리고 나서 통보하면 사후 정산이다.
+  // The guest has to hear this before we cancel. Telling them after charging is a settlement.
   @Get(':id/policies')
   @ApiOperation({ summary: '취소 조건·보증금 — 취소 시 물게 될 금액' })
   policies(@Param('id') id: string, @CurrentUser() user: AuthUser) {
@@ -97,8 +97,8 @@ export class ReservationsController {
     return this.booking.confirmWaitlist(id, user);
   }
 
-  // --- 로컬 조회·프론트데스크 -------------------------------------------
-  // 모든 조회·조작에 요청자를 함께 넘긴다. 소속이 지정된 직원은 자기 호텔로 고정된다.
+  // --- Local reads and front desk ----------------------------------------
+  // Every read and action carries the requester. Staff with a property are fixed to their hotel.
   @Get()
   @ApiOperation({ summary: '예약 목록 조회' })
   list(@Query() query: ListReservationsDto, @CurrentUser() user: AuthUser) {

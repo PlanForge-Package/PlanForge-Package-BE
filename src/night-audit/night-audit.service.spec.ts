@@ -36,7 +36,7 @@ function reservation(overrides: Record<string, unknown> = {}) {
 function buildPrisma(overrides: Record<string, unknown[]> = {}) {
   const findMany = jest
     .fn()
-    // 순서: 도착 미도착 → 출발 미체크아웃 → 재실 미배정 → (폴리오는 별도 모델)
+    // Order: due to arrive, due to depart, in house unassigned (folios are a separate model)
     .mockResolvedValueOnce(overrides.arrivals ?? [])
     .mockResolvedValueOnce(overrides.departures ?? [])
     .mockResolvedValueOnce(overrides.unassigned ?? []);
@@ -102,7 +102,7 @@ describe('NightAuditService — 점검표', () => {
     expect(result.businessDateFromOpera).toBe(true);
   });
 
-  // 잘못된 날짜로 마감 판단을 조용히 내리면 매출이 하루 밀려 붙는다.
+  // A close decided silently on the wrong date shifts a day of revenue.
   it('OPERA 에 닿지 못하면 달력 날짜를 쓰되 그 사실을 알린다', async () => {
     const core = buildCore();
     core.getBusinessDate.mockRejectedValue(new Error('unreachable'));
@@ -174,7 +174,7 @@ describe('NightAuditService — 점검표', () => {
 });
 
 describe('NightAuditService — 노쇼', () => {
-  // 도착일·상태 판단은 OPERA 의 몫이다. 여기서 또 검사하면 규칙이 갈라진다.
+  // Arrival date and status are OPERA's call. Checking again here splits the rules.
   it('예약 서비스에 그대로 위임한다', async () => {
     const noShow = jest.fn().mockResolvedValue({ id: 'res-1' });
     const service = await buildService(buildPrisma(), buildCore(), [], { noShow });

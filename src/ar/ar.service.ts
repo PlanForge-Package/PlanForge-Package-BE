@@ -27,7 +27,7 @@ import type {
   UpdateInvoiceStatusDto,
 } from './dto/ar.dto';
 
-/** 폴리오에서 AR 로 넘길 때 쓰는 거래 코드. */
+/** Transaction code used when transferring a folio to AR. */
 const AR_TRANSFER_CODE = '6000';
 
 const ACCOUNT_INCLUDE = {
@@ -35,18 +35,18 @@ const ACCOUNT_INCLUDE = {
 } satisfies Prisma.ArAccountInclude;
 
 /**
- * AR / 시티레저 — 후불 거래처.
+ * AR / city ledger — direct-bill accounts.
  *
- * 회사·여행사 앞으로 요금을 달아 두고 월말에 청구한다. 손님이 나갈 때 돈을
- * 받지 않으므로 그 금액은 폴리오에서 빠져나와 이 원장에 쌓인다.
+ * Charges are billed to a company or agency and invoiced at month end. No money
+ * is taken at departure, so the amount leaves the folio and lands in this ledger.
  *
- * **이관은 폴리오에서 돈이 나간 것으로 기록한다.** OPERA 폴리오에 결제를 달아
- * 잔액을 0 으로 만들고, 같은 금액을 여기에 청구로 올린다. 폴리오만 비우고
- * 여기에 올리지 않으면 받을 돈이 사라지고, 여기만 올리고 폴리오를 두면 손님이
- * 체크아웃하지 못한다.
+ * **A transfer is recorded as money leaving the folio.** A payment is posted on
+ * the OPERA folio to bring it to zero and the same amount is raised here as a
+ * charge. Emptying only the folio loses the receivable; raising only here leaves
+ * the guest unable to check out.
  *
- * 이 원장 자체는 우리가 들고 간다 — 폴리오는 OPERA 가 원천이지만, 거래처에
- * 언제 얼마를 청구했고 무엇이 미수인지는 호텔의 채권 관리다.
+ * We own the ledger itself — folios come from OPERA, but when and how much we
+ * billed an account, and what is outstanding, is the hotel's receivables management.
  */
 @Injectable()
 export class ArService {
@@ -55,7 +55,7 @@ export class ArService {
     private readonly core: CoreClient,
   ) {}
 
-  // --- 거래처 -------------------------------------------------------------
+  // --- Accounts -----------------------------------------------------------
 
   async listAccounts(query: ListAccountsDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, query.propertyId);
@@ -138,7 +138,7 @@ export class ArService {
     });
   }
 
-  /** 거래처 상세 — 잔액과 최근 거래, 청구서. */
+  /** Account detail — balance, recent transactions and invoices. */
   async accountDetail(id: string, user: AuthUser) {
     const account = await this.loadAccount(id, user);
 
@@ -169,7 +169,7 @@ export class ArService {
       balance,
       unbilled,
       transactions,
-      // 청구서마다 얼마를 받았고 얼마가 남았는지. 총액만으로는 독촉할 대상을 못 정한다.
+      // Received and outstanding per invoice. A total alone cannot say who to chase.
       invoices: invoices.map((invoice) => {
         const paid = invoice.allocations.reduce(
           (sum, row) => sum.add(row.amount),
@@ -191,14 +191,14 @@ export class ArService {
     };
   }
 
-  // --- 폴리오 → 거래처 -----------------------------------------------------
+  // --- Folio to account ----------------------------------------------------
 
   /**
-   * 폴리오 잔액을 거래처로 넘긴다.
+   * Transfers a folio balance to an account.
    *
-   * OPERA 폴리오에 결제를 달아 잔액을 0 으로 만들고, 같은 금액을 거래처
-   * 원장에 청구로 올린다. 두 쪽이 함께 성립해야 하므로 OPERA 가 받아 준 뒤에만
-   * 원장에 적는다.
+   * A payment is posted on the OPERA folio to bring it to zero and the same
+   * amount is raised as a charge on the account ledger. Both must hold, so the
+   * ledger is written only after OPERA accepts.
    */
   async transferFolio(reservationId: string, dto: TransferToArDto, user: AuthUser) {
     const reservation = await this.prisma.reservation.findUnique({
@@ -220,7 +220,7 @@ export class ArService {
     if (account.propertyId !== reservation.propertyId) {
       throw new BadRequestException('다른 호텔의 거래처로는 넘길 수 없습니다.');
     }
-    // 중지한 거래처로 넘기면 청구할 곳 없는 미수가 쌓인다.
+    // Transferring to a suspended account piles up receivables with nobody to bill.
     if (!account.active) {
       throw new BadRequestException(`중지된 거래처입니다: ${account.code}`);
     }
@@ -236,7 +236,7 @@ export class ArService {
     }
 
     const amount = folio.balance;
-    // 잔액이 없으면 넘길 것이 없고, 음수면 거래처가 아니라 손님에게 돌려줄 돈이다.
+    // Nothing to transfer at zero; a negative balance is owed back to the guest.
     if (amount.lessThanOrEqualTo(0)) {
       throw new BadRequestException(
         `넘길 잔액이 없습니다: ${amount.toString()}. 잔액이 남은 창구만 넘길 수 있습니다.`,
@@ -244,10 +244,10 @@ export class ArService {
     }
 
     /*
-     * 여신 한도를 넘기면 막는다.
+     * Blocked once the credit limit is exceeded.
      *
-     * 한도는 "이만큼까지는 받아 주겠다" 는 약속이다. 넘긴 뒤에 알면 이미 손님은
-     * 나갔고 청구할 수 없는 금액이 남는다.
+     * The limit is a promise of how much we will carry. Finding out afterwards
+     * means the guest has left and the amount cannot be billed.
      */
     if (account.creditLimit) {
       const current = new Prisma.Decimal(await this.balanceOf(account.id));
@@ -263,7 +263,7 @@ export class ArService {
       dto.description?.trim() ||
       `${reservation.confirmationNumber ?? reservationId} 폴리오 이관 (윈도 ${dto.window})`;
 
-    // 같은 창구를 두 번 넘기면 거래처에 두 배로 청구된다.
+    // Transferring one window twice bills the account twice.
     const reference = `AR-${folio.id}`;
 
     const updatedFolio = await this.core.createPosting(reservation.operaReservationId, dto.window, {
@@ -296,11 +296,11 @@ export class ArService {
   }
 
   /**
-   * 거래처 입금. 잔액에서 뺀다.
+   * Account payment. Subtracted from the balance.
    *
-   * 거래처는 청구서 한 장을 나눠 내기도 하고 여러 장을 묶어 내기도 한다. 어느
-   * 청구서에 얼마가 붙었는지 남겨 두지 않으면 무엇을 독촉해야 하는지 알 수 없어,
-   * 이미 받은 돈을 다시 달라고 하게 된다.
+   * An account may split one invoice across payments or settle several at once.
+   * Without recording how much went to which invoice we cannot say what to chase,
+   * and end up asking again for money already received.
    */
   async recordPayment(accountId: string, dto: RecordArPaymentDto, user: AuthUser) {
     const account = await this.loadAccount(accountId, user);
@@ -313,7 +313,7 @@ export class ArService {
       );
     }
 
-    // 열려 있는 청구서와 남은 금액. 배분은 이 안에서만 이뤄진다.
+    // Open invoices and what they still owe. Allocation happens only within these.
     const open = await this.openInvoices(account.id);
     const outstanding = new Map(open.map((row) => [row.invoice.id, row.outstanding]));
 
@@ -347,7 +347,7 @@ export class ArService {
     }
 
     const allocated = plan.reduce((sum, row) => sum.add(row.amount), new Prisma.Decimal(0));
-    // 받은 돈보다 많이 붙이면 없는 돈으로 청구서를 지우는 것이 된다.
+    // Allocating more than was received clears invoices with money we never got.
     if (allocated.greaterThan(amount)) {
       throw new BadRequestException(
         `입금액보다 많이 배분할 수 없습니다. 입금 ${amount.toString()}, 배분 ${allocated.toString()}`,
@@ -359,7 +359,7 @@ export class ArService {
         data: {
           accountId: account.id,
           type: ArTransactionType.PAYMENT,
-          // 입금은 음수로 올라간다. 잔액이 곧 거래 합계이기 때문이다.
+          // Payments post negative, because the balance is the sum of transactions.
           amount: amount.negated(),
           description: dto.description.trim(),
           createdById: user.id,
@@ -377,7 +377,7 @@ export class ArService {
           },
         });
 
-        // 다 채운 청구서는 수금으로 넘긴다. 남았으면 그대로 둔다.
+        // A fully covered invoice moves to PAID. Anything left stays as it is.
         const left = (outstanding.get(row.invoiceId) ?? new Prisma.Decimal(0)).sub(row.amount);
         if (left.lessThanOrEqualTo(0)) {
           await tx.arInvoice.update({
@@ -399,10 +399,10 @@ export class ArService {
   }
 
   /**
-   * 연체 현황.
+   * Aging.
    *
-   * 만기가 지난 청구서를 거래처별로 모으고 얼마나 지났는지로 나눈다. 오래된
-   * 미수일수록 받기 어려워지므로, 총액만 보면 어디부터 손대야 하는지 알 수 없다.
+   * Groups overdue invoices by account and by how long they are past due. Older
+   * receivables are harder to collect, and a total alone hides where to start.
    */
   async aging(query: AgingDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, query.propertyId);
@@ -450,7 +450,7 @@ export class ArService {
         new Prisma.Decimal(0),
       );
       const outstanding = invoice.total.sub(paid);
-      // 다 받은 청구서는 상태가 늦게 따라올 수 있다. 남은 금액이 없으면 뺀다.
+      // Status can lag behind a fully paid invoice. Drop it when nothing is left.
       if (outstanding.lessThanOrEqualTo(0)) continue;
 
       const daysOverdue = Math.floor((asOfDate.getTime() - invoice.dueDate.getTime()) / 86_400_000);
@@ -505,7 +505,7 @@ export class ArService {
         ) as Record<Bucket, string>,
         invoices: row.invoices,
       }))
-      // 연체가 큰 곳부터 본다. 오래된 미수일수록 받기 어렵다.
+      // Largest overdue first. The older a receivable, the harder it is to collect.
       .sort((a, b) => Number(b.overdue) - Number(a.overdue) || Number(b.total) - Number(a.total));
 
     const totals = buckets.reduce<Record<string, Prisma.Decimal>>((acc, bucket) => {
@@ -533,7 +533,7 @@ export class ArService {
     };
   }
 
-  /** 아직 다 받지 못한 청구서와 남은 금액. 만기가 빠른 순이다. */
+  /** Invoices not yet fully paid and what is left, earliest due date first. */
   private async openInvoices(accountId: string) {
     const invoices = await this.prisma.arInvoice.findMany({
       where: { accountId, status: { notIn: [ArInvoiceStatus.PAID, ArInvoiceStatus.VOID] } },
@@ -551,7 +551,7 @@ export class ArService {
       .filter((row) => row.outstanding.greaterThan(0));
   }
 
-  /** 만기가 빠른 청구서부터 채운다. 오래 묵은 미수를 먼저 정리하는 것이 보통이다. */
+  /** Fills the earliest-due invoices first, as older receivables are cleared first. */
   private autoAllocate(
     open: Array<{ invoice: { id: string }; outstanding: Prisma.Decimal }>,
     amount: Prisma.Decimal,
@@ -569,13 +569,13 @@ export class ArService {
     return plan;
   }
 
-  // --- 청구서 --------------------------------------------------------------
+  // --- Invoices -------------------------------------------------------------
 
   /**
-   * 미청구 거래를 모아 청구서를 만든다.
+   * Builds an invoice from the unbilled transactions.
    *
-   * 청구서에 묶인 거래는 다시 다른 청구서에 들어가지 않는다 — 두 번 청구하면
-   * 거래처가 두 번 낸다.
+   * A transaction on an invoice never joins another — billing twice makes the
+   * account pay twice.
    */
   async createInvoice(
     accountId: string,
@@ -628,10 +628,10 @@ export class ArService {
   }
 
   /**
-   * 청구서 상태 변경.
+   * Invoice status change.
    *
-   * 무효로 돌리면 묶여 있던 거래를 풀어 준다 — 그러지 않으면 잘못 발행한
-   * 청구서 때문에 그 거래를 영영 청구하지 못한다.
+   * Voiding releases the transactions it held — otherwise a wrongly issued
+   * invoice would keep them from ever being billed.
    */
   async updateInvoiceStatus(id: string, dto: UpdateInvoiceStatusDto, user: AuthUser) {
     const invoice = await this.prisma.arInvoice.findUnique({ where: { id } });
@@ -666,17 +666,17 @@ export class ArService {
   }
 
   /**
-   * 청구서 단건.
+   * A single invoice.
    *
-   * 거래처에 보내는 문서의 재료다. 호텔 정보와 청구 내역, 받은 금액과 남은
-   * 금액이 한 번에 있어야 문서를 다시 조립하지 않고 그대로 낼 수 있다.
+   * The material for the document sent to the account. Hotel details, the billed
+   * lines, received and outstanding must all be here so nothing is reassembled.
    */
   async invoiceDetail(id: string, user: AuthUser) {
     const invoice = await this.prisma.arInvoice.findUnique({
       where: { id },
       include: {
         account: true,
-        // 청구서에 찍히는 발행처. 주소는 문서에 필요하다.
+        // Issuer printed on the invoice. The address is needed on the document.
         property: { select: { id: true, name: true, address: true, currency: true } },
         transactions: {
           include: { reservation: { select: { id: true, confirmationNumber: true } } },
@@ -707,7 +707,7 @@ export class ArService {
       ...invoice,
       paid: paid.toFixed(2),
       outstanding: outstanding.toFixed(2),
-      // 무효·수금된 청구서는 연체가 아니다.
+      // Void and paid invoices are not overdue.
       overdue:
         invoice.status !== ArInvoiceStatus.PAID &&
         invoice.status !== ArInvoiceStatus.VOID &&
@@ -730,7 +730,7 @@ export class ArService {
     return account;
   }
 
-  /** 잔액은 저장하지 않는다. 거래 합계로 매번 다시 센다 — 폴리오와 같은 규칙이다. */
+  /** The balance is never stored. It is re-summed every time — same rule as folios. */
   private async balanceOf(accountId: string): Promise<string> {
     const total = await this.prisma.arTransaction.aggregate({
       where: { accountId },
@@ -754,10 +754,10 @@ export class ArService {
   }
 
   /**
-   * 아직 청구서에 묶이지 않은 금액. 다음 청구서에 들어갈 몫이다.
+   * Amount not yet on an invoice. This is what the next invoice will cover.
    *
-   * 입금은 세지 않는다 — 입금은 청구하는 것이 아니라 청구한 것을 갚는 것이다.
-   * 함께 세면 다음 달 청구서가 지난달 입금만큼 깎여 거래처가 그만큼 덜 낸다.
+   * Payments are excluded — a payment repays a charge rather than being one.
+   * Counted in, next month's invoice would shrink by last month's payment.
    */
   private async unbilledTotal(accountId: string): Promise<string> {
     const total = await this.prisma.arTransaction.aggregate({
@@ -768,10 +768,10 @@ export class ArService {
   }
 
   /**
-   * 다음 청구서 번호.
+   * Next invoice number.
    *
-   * 호텔별로 연도-일련번호를 매긴다. 거래처와 주고받는 식별자라 사람이 읽을 수
-   * 있어야 하고, 호텔이 다르면 번호가 겹쳐도 상관없다.
+   * Numbered year-sequence per hotel. It is the identifier exchanged with the
+   * account, so it must be human-readable; collisions across hotels are fine.
    */
   private async nextInvoiceNumber(propertyId: string): Promise<string> {
     const year = new Date().getUTCFullYear();

@@ -87,7 +87,7 @@ describe('ReportsService — 점유율', () => {
     expect(sold).toEqual([1, 1, 0]);
   });
 
-  // 고장(OOO) 객실은 재고에서 빠지므로 분모에서도 빠진다.
+  // Out-of-order rooms leave inventory, so they leave the denominator too.
   it('고장 기간인 객실은 그 날짜의 분모에서 뺀다', async () => {
     const service = await buildService(
       buildPrisma({
@@ -108,8 +108,8 @@ describe('ReportsService — 점유율', () => {
     expect(result.rows[0]?.occupancy).toBe(0.5);
   });
 
-  // 판매중지(OOS)는 재고에 남으므로 분모가 줄지 않는다. 이 차이가 두 구분을
-  // 나눠 둔 이유다 — 서비스는 OOO 기록만 읽는다.
+  // Out-of-service rooms stay in inventory, so the denominator holds. That difference
+  // is why the two are split — the service reads only OOO records.
   it('판매중지는 분모를 줄이지 않는다', async () => {
     const prisma = buildPrisma({
       rooms: Array(4).fill(RoomStatus.CLEAN),
@@ -128,7 +128,7 @@ describe('ReportsService — 점유율', () => {
     expect(result.rows[0]?.roomsAvailable).toBe(4);
   });
 
-  // 기간이 끝나면 그날부터 다시 판 객실이다. 기간 밖 날짜까지 빼면 점유율이 부풀려진다.
+  // Once the outage ends the room is sellable again. Subtracting past it inflates occupancy.
   it('고장 기간이 끝난 날짜는 다시 분모에 넣는다', async () => {
     const service = await buildService(
       buildPrisma({
@@ -144,7 +144,7 @@ describe('ReportsService — 점유율', () => {
     expect(result.rows.map((row) => row.roomsAvailable)).toEqual([3, 4]);
   });
 
-  // 중간에 해제하면 그 뒤 날짜는 다시 팔 수 있었던 객실이다.
+  // Released early, the days after that were sellable again.
   it('해제된 뒤 날짜는 분모에 되돌린다', async () => {
     const service = await buildService(
       buildPrisma({
@@ -160,7 +160,7 @@ describe('ReportsService — 점유율', () => {
     expect(result.rows.map((row) => row.roomsAvailable)).toEqual([3, 4, 4]);
   });
 
-  // 날짜마다 분모가 다르므로 합계도 날짜별로 더한다. 하루치를 곱하면 어긋난다.
+  // The denominator differs per date, so the total sums per date. Multiplying one day is wrong.
   it('기간 합계 분모는 날짜별 값의 합이다', async () => {
     const service = await buildService(
       buildPrisma({
@@ -176,7 +176,7 @@ describe('ReportsService — 점유율', () => {
     expect(result.totals.roomsAvailable).toBe(7);
   });
 
-  // 취소·노쇼가 점유율에 들어가면 팔지 않은 방을 판 것으로 집계된다.
+  // Cancellations and no-shows in occupancy count rooms we never sold as sold.
   it('예약분과 실적을 나눠 센다', async () => {
     const service = await buildService(
       buildPrisma({
@@ -208,7 +208,7 @@ describe('ReportsService — ADR·RevPAR', () => {
     );
     expect(result.rows[0]?.roomRevenue).toBe('100000.00');
     expect(result.rows[0]?.adr).toBe('100000.00');
-    // 객실 10실 기준
+    // Based on 10 rooms
     expect(result.rows[0]?.revpar).toBe('10000.00');
   });
 
@@ -223,7 +223,7 @@ describe('ReportsService — ADR·RevPAR', () => {
     expect(result.rows[0]?.occupancy).toBe(0);
   });
 
-  // 금액이 없는 예약을 0 으로 세지 않으면 ADR 이 통째로 무너진다.
+  // Not counting reservations without an amount as 0 destroys ADR entirely.
   it('총액이 없는 예약은 매출 0 으로 다룬다', async () => {
     const service = await buildService(
       buildPrisma({ reservations: [stay('2026-08-01', '2026-08-02', null)] }),
@@ -254,13 +254,13 @@ describe('ReportsService — ADR·RevPAR', () => {
     expect(result.totals.roomsSold).toBe(2);
     expect(result.totals.roomRevenue).toBe('400000.00');
     expect(result.totals.adr).toBe('200000.00');
-    // 10실 × 2박
+    // 10 rooms x 2 nights
     expect(result.totals.revpar).toBe('20000.00');
   });
 });
 
 describe('ReportsService — 포스팅 매출', () => {
-  // 계약 기준 매출과 실제 청구를 섞으면 차이를 설명할 수 없게 된다.
+  // Mixing contracted revenue with actual charges leaves the difference unexplainable.
   it('청구·결제·조정을 따로 합산하고 미수를 계산한다', async () => {
     const service = await buildService(
       buildPrisma({
@@ -280,7 +280,7 @@ describe('ReportsService — 포스팅 매출', () => {
     expect(result.postings.charges).toBe('110000.00');
     expect(result.postings.payments).toBe('-50000.00');
     expect(result.postings.adjustments).toBe('-5000.00');
-    // amount 는 이미 부호가 붙어 있다. 결제를 다시 빼면 두 번 빠진다.
+    // amount is already signed. Subtracting payments again deducts them twice.
     expect(result.postings.outstanding).toBe('55000.00');
   });
 
@@ -325,7 +325,7 @@ describe('ReportsService — 채널 분해', () => {
       HQ,
     );
 
-    // 매출이 큰 쪽부터 온다.
+    // Largest revenue comes first.
     expect(result.breakdown.channel.map((row) => row.code)).toEqual(['BOOKINGCOM', 'WEB']);
     const web = result.breakdown.channel.find((row) => row.code === 'WEB');
     expect(web?.roomsSold).toBe(2);
@@ -334,7 +334,7 @@ describe('ReportsService — 채널 분해', () => {
     expect(web?.share).toBeCloseTo(2 / 3, 4);
   });
 
-  // 빼 버리면 분해 합계가 전체와 어긋나 어느 쪽이 맞는지 알 수 없다.
+  // Dropped, the breakdown would not sum to the total and neither figure could be trusted.
   it('코드가 없는 예약은 (미지정) 으로 모은다', async () => {
     const service = await buildService(
       buildPrisma({ reservations: [stay('2026-08-01', '2026-08-02', 100000)] }),
@@ -372,7 +372,7 @@ describe('ReportsService — 채널 분해', () => {
     expect(revenue).toBeCloseTo(Number(result.totals.roomRevenue), 2);
   });
 
-  // 취소·노쇼가 채널 실적에 섞이면 팔지 않은 것을 판 것으로 집계한다.
+  // Cancellations and no-shows in channel performance count unsold rooms as sold.
   it('실적이 아닌 예약은 분해에서도 뺀다', async () => {
     const service = await buildService(
       buildPrisma({

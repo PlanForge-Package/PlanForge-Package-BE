@@ -19,8 +19,8 @@ import { HousekeepingService } from './housekeeping.service';
 export class HousekeepingController {
   constructor(private readonly housekeeping: HousekeepingService) {}
 
-  // 하우스키핑 직원이 자기 작업을 보는 화면이므로 전 역할이 조회한다.
-  // 서비스가 역할에 따라 범위를 좁힌다.
+  // Housekeeping staff view their own work here, so every role may read it.
+  // The service narrows the scope by role.
   @Get('tasks')
   @ApiOperation({ summary: '근무일 작업 목록 — 하우스키핑은 본인 것만 보입니다' })
   listTasks(@Query() query: ListTasksDto, @CurrentUser() user: AuthUser) {
@@ -48,7 +48,7 @@ export class HousekeepingController {
     return this.housekeeping.assignTask(id, dto, user);
   }
 
-  // 진행 처리는 담당 직원이 직접 한다. 서비스가 본인 작업인지 확인한다.
+  // Progress is recorded by the assigned person. The service checks it is their task.
   @Patch('tasks/:id')
   @ApiOperation({ summary: '작업 진행 상태 변경' })
   update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @CurrentUser() user: AuthUser) {
@@ -56,10 +56,10 @@ export class HousekeepingController {
   }
 
   /**
-   * 객실 상태 변경.
+   * Room status change.
    *
-   * 하우스키핑도 바꿀 수 있어야 한다 — 청소를 끝낸 사람이 상태를 올리는 것이
-   * 자연스러운 흐름이다. 실제 반영은 OPERA 가 한다.
+   * Housekeeping must be able to change it too — whoever finished cleaning raising
+   * the status is the natural flow. OPERA applies the change.
    */
   @Patch('rooms/:id/status')
   @Roles(UserRole.MANAGER, UserRole.FRONT_DESK, UserRole.HOUSEKEEPING)

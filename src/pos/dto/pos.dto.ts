@@ -29,10 +29,10 @@ export class PostRoomChargeDto {
   description!: string;
 
   /**
-   * POS 전표 번호.
+   * POS check number.
    *
-   * 네트워크가 끊겨 같은 요청이 다시 오는 일은 흔하다. 같은 아웃렛의 같은
-   * 전표는 한 번만 달린다 — 손님에게 두 번 청구되면 되돌리기 어렵다.
+   * The same request arriving again after a network drop is common. One check from
+   * one outlet posts once — a double charge is hard to undo.
    */
   @ApiProperty({ description: 'POS 전표 번호. 재전송 시 중복 청구를 막습니다.' })
   @IsString()

@@ -1,7 +1,7 @@
 import { FolioStatus, Prisma, PostingType } from '@prisma/client';
 import type { CoreFolio, CorePostingType } from '../core/core.types';
 
-/** OPERA 표기 ↔ PlanForge 표기. 매핑을 한 곳에 모아 둔다. */
+/** OPERA terms to PlanForge terms. The mapping is kept in one place. */
 const TO_OPERA_TYPE: Record<PostingType, CorePostingType> = {
   [PostingType.CHARGE]: 'Charge',
   [PostingType.PAYMENT]: 'Payment',
@@ -21,14 +21,14 @@ export function toOperaPostingType(type: PostingType): CorePostingType {
 }
 
 /**
- * OPERA 가 확정한 폴리오를 로컬에 옮겨 적는다.
+ * Copies the folio OPERA confirmed into the local rows.
  *
- * 로컬 행은 캐시다. 잔액을 여기서 다시 계산하지 않는다 — 두 시스템이 각자 세면
- * 언젠가 값이 갈리고, 회계 데이터에서 그건 어느 쪽이 맞는지 판단할 근거가
- * 없다는 뜻이다.
+ * Local rows are a cache. The balance is never recomputed here — two systems
+ * counting separately eventually disagree, and in accounting data there is no way
+ * to tell which side is right.
  *
- * OPERA 가 모르는 것(어느 POS 아웃렛이 달았는지, 어느 결제가 만들었는지)은
- * 우리만 아는 정보이므로 갱신할 때 건드리지 않는다.
+ * What OPERA does not know (which POS outlet posted it, which payment created it)
+ * is ours alone, so it is left untouched on update.
  */
 export async function mirrorFolios(
   tx: Prisma.TransactionClient,
@@ -40,11 +40,11 @@ export async function mirrorFolios(
 
   for (const folio of folios) {
     /*
-     * 다른 행이 같은 OPERA 식별자를 들고 있으면 그쪽이 낡은 것이다.
+     * Another row holding the same OPERA id is the stale one.
      *
-     * 사본의 고유 제약은 정합성 장치이지 업무 규칙이 아니다. 여기서 걸려
-     * 예외가 나면 이미 돈이 오간 뒤에 500 이 떨어지고, 그 결제는 OPERA 에는
-     * 있고 우리 화면에는 없는 상태로 남는다. 지금 OPERA 가 말하는 쪽을 따른다.
+     * The copy's unique constraint is a consistency device, not a business rule. An
+     * exception here would raise a 500 after money already moved, leaving a payment
+     * that exists in OPERA but not on our screen. We follow what OPERA says now.
      */
     await tx.folio.updateMany({
       where: {
@@ -75,11 +75,11 @@ export async function mirrorFolios(
       const local = await tx.posting.upsert({
         where: { operaPostingId: posting.postingId },
         /*
-         * 온 값을 전부 옮겨 적는다.
+         * Everything that arrived is written.
          *
-         * 일부만 갱신하면 사본이 OPERA 와 다른 값을 들고 있게 된다 — 거래 코드가
-         * 예전 것으로 남으면 그 금액이 마감에서 엉뚱한 매출로 분개된다. 이 행은
-         * 우리가 만든 기록이 아니라 저쪽 기록의 사본이다.
+         * Updating only part leaves the copy holding values OPERA does not have — a
+         * stale transaction code posts that amount to the wrong revenue at close.
+         * This row is a copy of their record, not one we made.
          */
         update: {
           folioId: saved.id,
@@ -110,10 +110,10 @@ export async function mirrorFolios(
   }
 
   /*
-   * 취소 관계는 두 번째 바퀴에서 잇는다.
+   * Void relations are linked on a second pass.
    *
-   * OPERA 는 자기 식별자로 가리키므로, 상대 행이 먼저 만들어져 있어야 로컬
-   * 식별자로 바꿀 수 있다.
+   * OPERA points with its own ids, so the other row has to exist before it can be
+   * translated into a local id.
    */
   for (const folio of folios) {
     for (const posting of folio.postings) {
@@ -138,10 +138,10 @@ export async function mirrorFolios(
   }
 
   /*
-   * OPERA 에 없는 거래는 지운다.
+   * Transactions OPERA does not have are deleted.
    *
-   * 이관은 창구를 옮기므로 위에서 갱신되지만, 우리가 만들었다가 OPERA 가 받지
-   * 않은 행이 남으면 잔액과 내역이 어긋난다. 로컬 원장을 OPERA 에 맞춘다.
+   * A transfer moves a window and is updated above, but a row we created and OPERA
+   * never accepted would skew the balance and the detail. The local ledger follows OPERA.
    */
   const windows = folios.map((folio) => folio.window);
   await tx.posting.deleteMany({

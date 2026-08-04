@@ -25,13 +25,13 @@ export class RoomsService {
     });
   }
 
-  // 객실 상태 변경은 OPERA 위임이 필요해 HousekeepingService 로 옮겼다.
+  // Room status changes need delegation to OPERA and moved to HousekeepingService.
 
-  /** 객실 상태별 집계. 하우스키핑 보드용. */
+  /** Counts by room status, for the housekeeping board. */
   async statusSummary(requestedPropertyId: string, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, requestedPropertyId);
 
-    // 집계는 호텔을 특정해야 의미가 있다. 전 호텔 합계는 운영에 쓸 일이 없다.
+    // Counts only mean something for one hotel. A chain-wide total has no operational use.
     if (!propertyId) {
       throw new BadRequestException('호텔을 선택해 주세요.');
     }

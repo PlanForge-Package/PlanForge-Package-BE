@@ -1,9 +1,9 @@
 /**
- * Core(API Server)가 반환하는 응답 형태.
+ * Response shapes returned by Core (the API server).
  *
- * Core 는 OPERA 원본이 아니라 PlanForge 표준 형태로 정규화해 내려주므로,
- * BE 는 OHIP 필드명을 알 필요가 없다. 스키마 원본은 Core 의
- * `openapi/planforge-core.json` 이며, 여기 정의는 그와 일치해야 한다.
+ * Core normalises OPERA into PlanForge's own shape rather than passing the
+ * original through, so BE never needs OHIP field names. The schema of record is
+ * Core's `openapi/planforge-core.json`, and these definitions must match it.
  */
 
 export interface CoreAvailabilityItem {
@@ -22,7 +22,7 @@ export interface CoreAvailabilityResponse {
   items: CoreAvailabilityItem[];
 }
 
-/** Core 가 쓰는 OPERA 예약 상태 표기. */
+/** OPERA reservation statuses as Core spells them. */
 export type CoreReservationStatus =
   'Reserved' | 'Confirmed' | 'InHouse' | 'CheckedOut' | 'Cancelled' | 'NoShow' | 'Waitlisted';
 
@@ -40,17 +40,17 @@ export interface CoreReservation {
   children?: number;
   totalAmount?: number;
   currency?: string;
-  /** 단체 블록에서 빠져나온 예약이면 그 블록 코드 */
+  /** Block code, if the reservation was picked up from a group block */
   blockCode?: string;
-  /** 객실을 함께 쓰는 예약들의 묶음. 예약은 둘이어도 객실은 하나다. */
+  /** Group of reservations sharing a room. Two reservations, one room. */
   shareGroupId?: string;
-  /** 예약이 들어온 경로. 세 축을 따로 두어야 조합을 구분할 수 있다. */
+  /** Where the booking came from. Three separate axes keep combinations distinct. */
   sourceCode?: string;
   marketCode?: string;
   channelCode?: string;
-  /** 보증 방식 — SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP. */
+  /** Guarantee type — SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP. */
   guaranteeCode?: string;
-  /** 취소하며 물린 위약금. 취소된 예약에만 있다. */
+  /** Penalty charged on cancellation. Present only on cancelled reservations. */
   cancellationPenalty?: number;
   guest?: {
     profileId?: string;
@@ -86,7 +86,7 @@ export interface CoreReservationListParams {
 export interface CoreNightlyRate {
   date: string;
   amount: number;
-  /** 그날 붙는 패키지 금액. 요금에 포함된 패키지는 0 이다. */
+  /** Package amount for that day. Packages included in the rate are 0. */
   packageAmount?: number;
 }
 
@@ -126,14 +126,14 @@ export interface CoreRateParams {
   adults?: number;
 }
 
-// --- 요금 코드 설정. OPERA 가 원천이라 사본을 두지 않는다 ---------------------
+// --- Rate code configuration. OPERA owns it, so no local copy ----------------
 
 export interface CoreRateSeason {
   seasonId: string;
   name: string;
   startDate: string;
   endDate: string;
-  /** 0=일요일. 비우면 기간 내 매일. */
+  /** 0=Sunday. Empty means every day in the range. */
   daysOfWeek?: number[];
   amounts: Record<string, number>;
 }
@@ -222,11 +222,11 @@ export interface CoreTransactionCode {
   transactionCode: string;
   hotelId: string;
   name: string;
-  /** Room = 객실, FoodBeverage = 식음, Other = 기타, Payment = 결제. */
+  /** Room, FoodBeverage, Other and Payment. */
   group: string;
   vatRate: number;
   serviceChargeRate: number;
-  /** 표시가격에 세금이 포함되어 있으면 true. */
+  /** True when the displayed price already includes tax. */
   taxInclusive: boolean;
   active: boolean;
 }
@@ -236,7 +236,7 @@ export interface CoreTransactionCodeListResponse {
   items: CoreTransactionCode[];
 }
 
-/** 예약의 취소 조건과 보증금. 취소 전에 손님에게 알려야 하는 값이다. */
+/** Cancellation terms and deposit. The guest hears this before we cancel. */
 export interface CoreReservationPolicies {
   reservationId: string;
   guaranteeCode: string;
@@ -259,7 +259,7 @@ export interface CoreDepositInput {
   amount: number;
   description?: string;
   transactionCode?: string;
-  /** 같은 보증금을 두 번 받지 않기 위한 전표 번호. */
+  /** Check number that stops the same deposit being taken twice. */
   reference?: string;
 }
 
@@ -292,7 +292,7 @@ export interface CoreUpdatePackageInput {
   includedInRate?: boolean;
 }
 
-/** Core 가 OPERA 에서 받아 정규화한 객실 상태. */
+/** Room status as Core normalised it from OPERA. */
 export interface CoreRoomStatus {
   hotelId: string;
   roomNumber: string;
@@ -300,7 +300,7 @@ export interface CoreRoomStatus {
   occupied?: boolean;
 }
 
-/** OPERA 표기의 거래 종류. 부호는 종류가 정한다. */
+/** Transaction kind in OPERA's terms. The kind sets the sign. */
 export type CorePostingType = 'Charge' | 'Payment' | 'Adjustment' | 'Tax';
 
 export interface CorePosting {
@@ -308,7 +308,7 @@ export interface CorePosting {
   type: CorePostingType;
   transactionCode: string;
   description: string;
-  /** 부호가 붙은 값. 청구는 양수, 결제는 음수다. */
+  /** Signed value. Charges are positive, payments negative. */
   amount: number;
   currencyCode: string;
   postedAt: string;
@@ -317,7 +317,7 @@ export interface CorePosting {
   transferredFromWindow?: number;
 }
 
-/** OPERA 가 확정한 폴리오. 잔액은 저쪽이 계산한 값이다. */
+/** A folio as OPERA confirmed it. The balance is their figure. */
 export interface CoreFolio {
   folioId: string;
   reservationId: string;
@@ -338,13 +338,13 @@ export interface CoreCreatePostingInput {
   type: CorePostingType;
   transactionCode: string;
   description: string;
-  /** 항상 양수로 보낸다. 잔액 방향은 type 이 정한다. */
+  /** Always sent positive. The type decides which way the balance moves. */
   amount: number;
   negative?: boolean;
   reference?: string;
 }
 
-/** 사용 불가 객실 기간. OutOfOrder 는 재고에서 빠지고 OutOfService 는 판매만 멈춘다. */
+/** Room outage. OutOfOrder leaves inventory; OutOfService only stops sales. */
 export interface CoreRoomOutage {
   outageId: string;
   hotelId: string;
@@ -380,15 +380,15 @@ export interface CoreCreateReservationInput {
   ratePlanCode?: string;
   adults: number;
   children?: number;
-  /** 단체 블록에서 빼는 예약이면 블록 코드. OPERA 가 픽업으로 잡는다. */
+  /** Block code when picking up from a group block. OPERA counts it as pickup. */
   blockCode?: string;
-  /** 매진이어도 대기로 받는다. 대기 예약은 재고를 차지하지 않는다. */
+  /** Take a waitlist booking even when sold out. It holds no inventory. */
   waitlist?: boolean;
-  /** 예약 경로. 비우면 OPERA 가 직접 예약으로 잡는다. */
+  /** Booking origin. Empty lets OPERA default it to a direct booking. */
   sourceCode?: string;
   marketCode?: string;
   channelCode?: string;
-  /** 보증 방식. 비우면 6PM — 보증 없는 예약은 18시까지만 잡아 둔다. */
+  /** Guarantee type. Empty means 6PM — an unguaranteed booking is held until 18:00. */
   guaranteeCode?: string;
   guest: {
     profileId?: string;
@@ -408,10 +408,10 @@ export interface CoreUpdateReservationInput {
 }
 
 /**
- * 호텔의 영업일.
+ * The hotel's business date.
  *
- * 달력 날짜와 다르다. 야간 감사를 돌리기 전까지는 자정을 넘겨도 어제가 영업일로
- * 남고, 매출·점유율이 어느 날짜에 붙는지가 그 값으로 정해진다.
+ * Not the calendar date. Until night audit runs, yesterday stays the business date
+ * past midnight, and that value decides which day revenue and occupancy land on.
  */
 export interface CoreBusinessDate {
   hotelId: string;
@@ -427,7 +427,7 @@ export interface CoreProfile {
   mergedIntoId?: string;
 }
 
-// --- 단체 블록 --------------------------------------------------------------
+// --- Group blocks -----------------------------------------------------------
 
 export type CoreBlockStatus = 'Inquiry' | 'Tentative' | 'Definite' | 'Cancelled' | 'Actual';
 
@@ -482,7 +482,7 @@ export interface CoreCreateBlockInput {
     roomTypeCode: string;
     blocked: number;
     ratePlanCode?: string;
-    /** 협의 요금. 넣으면 요금 코드의 계산 대신 이 금액으로 판다. */
+    /** Negotiated amount. Set, it is sold at this price instead of the rate code's. */
     amount?: number;
   }>;
 }

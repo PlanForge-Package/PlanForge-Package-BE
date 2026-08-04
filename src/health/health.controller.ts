@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 로드밸런서·모니터링이 토큰 없이 찔러야 하므로 공개한다.
+  // Public, because load balancers and monitoring have to probe it without a token.
   @Public()
   @Get()
   @ApiOperation({ summary: '서비스 및 데이터베이스 상태 확인' })

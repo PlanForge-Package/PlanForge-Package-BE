@@ -130,7 +130,7 @@ describe('RatesService — 조회', () => {
     expect(core.getRates).not.toHaveBeenCalled();
   });
 
-  // 1인당 붙는 패키지가 있어 인원에 따라 총액이 달라진다.
+  // Some packages are per person, so the total changes with the guest count.
   it('인원을 그대로 넘긴다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -163,7 +163,7 @@ describe('RatesService — 요금 코드', () => {
     );
   });
 
-  // OPERA 도 거절하지만, 쓸 수 있는 코드를 알려 주는 편이 화면에서 고치기 쉽다.
+  // OPERA rejects it too, but naming the valid codes makes it easier to fix on screen.
   it('모르는 객실 타입은 보내기 전에 거절한다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -270,7 +270,7 @@ describe('RatesService — 시즌', () => {
     );
   });
 
-  // 요일을 모두 고르는 것은 고르지 않은 것과 같다.
+  // Picking every weekday is the same as picking none.
   it('요일 7개는 매일로 바꿔 보낸다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -333,7 +333,7 @@ describe('RatesService — 기록', () => {
     );
   });
 
-  // 실패를 남기지 않으면 요금이 왜 안 바뀌었는지 나중에 알 수 없다.
+  // Without recording the failure there is no telling later why the rate did not change.
   it('실패도 남기고 오류를 그대로 올린다', async () => {
     const prisma = buildPrisma();
     const core = buildCore({

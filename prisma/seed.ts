@@ -1,10 +1,10 @@
 /**
- * 개발용 시드 데이터.
+ * Development seed data.
  *
- * 화면과 API 를 실제 데이터로 확인하기 위한 최소 세트다. 운영 DB 에는 절대 돌리지
- * 않는다 — 아래에서 NODE_ENV=production 이면 즉시 중단한다.
+ * A minimum set for checking screens and APIs against real data. Never run it
+ * against a production database — it aborts below when NODE_ENV=production.
  *
- * 여러 번 돌려도 결과가 같도록 모두 upsert 로 작성했다.
+ * Everything is an upsert, so repeated runs give the same result.
  */
 
 import { PrismaClient, ProfileType, ReservationStatus, RoomStatus, UserRole } from '@prisma/client';
@@ -12,12 +12,12 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-/** `YYYY-MM-DD` 를 UTC 자정 Date 로. @db.Date 컬럼이 하루 밀리지 않게 한다. */
+/** `YYYY-MM-DD` to a UTC-midnight Date, so @db.Date columns do not shift a day. */
 function d(value: string): Date {
   return new Date(`${value}T00:00:00.000Z`);
 }
 
-/** 오늘 기준 오프셋 날짜. 시드가 언제 돌아도 "오늘 도착" 같은 상태가 유지된다. */
+/** A date offset from today, so states like "arriving today" hold whenever it runs. */
 function day(offset: number): string {
   const base = new Date();
   base.setUTCDate(base.getUTCDate() + offset);
@@ -47,11 +47,11 @@ const ROOMS = [
 ];
 
 /**
- * 역할별로 하나씩. 권한 경계를 화면에서 바로 확인할 수 있게 한다.
+ * One account per role, so permission boundaries can be checked from the screens.
  *
- * `assigned: false` 는 소속 없음(본사)이다. 관리자를 특정 호텔에 묶으면 다중 호텔
- * 운영에서 다른 호텔을 관리할 수 없게 된다 — 호텔 등록도, 그 호텔 직원 배치도
- * 막힌다. 관리자는 본사 계정으로 둔다.
+ * `assigned: false` means no property (head office). Tying an admin to one hotel
+ * makes the other hotels unmanageable in a multi-hotel setup — neither registering
+ * a hotel nor staffing it works. Admins stay head-office accounts.
  */
 const USERS = [
   { email: 'admin@planforge.local', name: '관리자', role: UserRole.ADMIN, assigned: false },
@@ -86,13 +86,13 @@ const GUESTS = [
 ];
 
 /**
- * 예약 경로를 서로 다르게 둔다.
+ * Booking origins are deliberately varied.
  *
- * 전부 같은 채널이면 채널별 실적 화면이 한 줄짜리가 되어 아무것도 검증하지
- * 못한다. OTA·자사·프런트가 섞여 있어야 의존도와 ADR 차이가 눈에 보인다.
+ * All on one channel, the channel performance screen is a single row and verifies
+ * nothing. OTA, direct and walk-in mixed makes dependence and ADR gaps visible.
  */
 const RESERVATIONS = [
-  // 재실 — 객실이 배정된 상태. 목록·객실 화면의 재실 표기를 확인할 수 있다.
+  // In house — a room is assigned. Verifies the in-house marks on list and room screens.
   {
     conf: 'PF-000001',
     guest: 'PRF-0001',
@@ -107,7 +107,7 @@ const RESERVATIONS = [
     market: 'LEISURE',
     channel: 'BOOKINGCOM',
   },
-  // 오늘 도착 확정 — 체크인 시험용.
+  // Confirmed, arriving today — for testing check-in.
   {
     conf: 'PF-000002',
     guest: 'PRF-0002',
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
     },
   });
 
-  // 계정. 비밀번호는 환경변수로 받아 소스에 평문을 남기지 않는다.
+  // Accounts. Passwords come from env so no plaintext lives in source.
   const seedPassword = process.env.SEED_PASSWORD ?? 'planforge';
   if (seedPassword.length < 8) {
     throw new Error('SEED_PASSWORD 는 8자 이상이어야 합니다.');
@@ -208,8 +208,8 @@ async function main(): Promise<void> {
     const propertyId = assigned ? property.id : null;
     await prisma.user.upsert({
       where: { email: user.email },
-      // 비밀번호와 소속도 매번 되돌린다 — 개발 중 바꿔 놓고 잊어 로그인하지 못하거나
-      // 관리자가 한 호텔에 갇히는 일을 막는다.
+      // Password and property are reset every run — it stops a value changed during
+      // development from locking someone out or trapping an admin in one hotel.
       update: { name: user.name, role: user.role, passwordHash, active: true, propertyId },
       create: { ...user, passwordHash, propertyId },
     });
@@ -241,8 +241,8 @@ async function main(): Promise<void> {
 
     await prisma.room.upsert({
       where: { propertyId_number: { propertyId: property.id, number: room.number } },
-      // 점유는 아래에서 재실 예약을 보고 다시 세운다. 여기서 함께 초기화하지 않으면
-      // 이전 실행에서 체크인한 객실이 계속 점유 상태로 남아 다음 체크인이 막힌다.
+      // Occupancy is rebuilt below from in-house reservations. Without clearing it here,
+      // rooms checked in on an earlier run stay occupied and block the next check-in.
       update: { status: room.status, floor: room.floor, roomTypeId, occupied: false },
       create: {
         propertyId: property.id,
@@ -254,7 +254,7 @@ async function main(): Promise<void> {
     });
   }
 
-  // 이 호텔의 나머지 객실(시드 목록 밖에서 만들어진 것 포함)도 점유를 푼다.
+  // Release occupancy on this hotel's other rooms too, including any made outside this list.
   await prisma.room.updateMany({
     where: { propertyId: property.id },
     data: { occupied: false },
@@ -305,33 +305,33 @@ async function main(): Promise<void> {
     };
 
     /*
-     * OPERA 번호를 붙이지 않는다.
+     * No OPERA id is attached.
      *
-     * 여기서 지어낸 번호는 OPERA 에 없다. 예약·폴리오·체크인이 모두 OPERA 에
-     * 위임된 뒤로는, 있지도 않은 번호를 달아 두면 그 예약으로 무엇을 하든
-     * "예약을 찾을 수 없습니다" 로 막히고 원인을 찾기 어렵다.
+     * A number invented here does not exist in OPERA. Now that reservations, folios
+     * and check-in are all delegated, a made-up id makes every action on that
+     * reservation fail with "reservation not found" for no obvious reason.
      *
-     * 이 예약들은 목록·검색·실적 화면을 채우기 위한 로컬 표본이다. 연동된
-     * 예약이 필요하면 화면에서 새로 만들거나 `POST /api/sync/reservations` 로
-     * OPERA 에서 가져온다.
+     * These reservations are a local sample to fill the list, search and report
+     * screens. For a linked reservation, create one from the screen or pull it
+     * from OPERA with `POST /api/sync/reservations`.
      */
     const reservation = await prisma.reservation.upsert({
       where: { confirmationNumber: r.conf },
-      // 이전 시드가 지어내 둔 번호도 지운다. 남겨 두면 이미 만들어진 개발
-      // DB 에서는 계속 "예약을 찾을 수 없습니다" 로 막힌다.
+      // Clear ids invented by an earlier seed too. Left behind, an existing dev
+      // database keeps failing with "reservation not found".
       update: { ...data, operaReservationId: null },
       create: { ...data, confirmationNumber: r.conf },
     });
 
     /*
-     * 이 예약에 붙어 있던 폴리오는 지운다.
+     * Folios attached to this reservation are removed.
      *
-     * 여러 번 돌려도 결과가 같아야 한다. 이전 시드가 만들어 둔 계산서나 앞선
-     * 시험이 남긴 창구가 남아 있으면 OPERA 에 없는 잔액이 계속 화면에 뜬다.
+     * Repeated runs must give the same result. A bill left by an earlier seed or a
+     * window left by an earlier test shows a balance OPERA does not have.
      */
     await prisma.folio.deleteMany({ where: { reservationId: reservation.id } });
 
-    // 재실 예약은 객실을 점유 상태로 맞춘다.
+    // In-house reservations set their room occupied.
     if (r.status === ReservationStatus.IN_HOUSE && r.room) {
       await prisma.room.update({
         where: { propertyId_number: { propertyId: property.id, number: r.room } },
@@ -339,12 +339,12 @@ async function main(): Promise<void> {
       });
 
       /*
-       * 폴리오는 새로 만들지 않는다.
+       * No folios are created.
        *
-       * 회계 원장은 OPERA 가 원천이고 로컬 행은 그 사본이다. 여기서 잔액과
-       * 거래를 지어내면 OPERA 에 없는 계산서가 화면에 뜨고, 실제로 요금을
-       * 달려는 순간 사본과 원장이 갈린다. 잔액이 남은 폴리오를 시험하려면
-       * 화면에서 예약을 만들어 체크인한 뒤 요금을 달아 주세요.
+       * The ledger's source is OPERA and local rows are a copy. Inventing balances
+       * and transactions here puts a bill on screen that OPERA does not have, and
+       * the copy diverges the moment a real charge is posted. To test a folio with
+       * a balance, book and check in from the screen, then post a charge.
        */
     }
   }

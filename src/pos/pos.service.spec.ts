@@ -6,7 +6,7 @@ import type { CoreFolio } from '../core/core.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { PosService } from './pos.service';
 
-// 미러링은 folio-mirror.spec.ts 가 따로 본다.
+// Mirroring is covered separately by folio-mirror.spec.ts.
 jest.mock('../folios/folio-mirror', () => ({
   ...jest.requireActual('../folios/folio-mirror'),
   mirrorFolios: jest.fn().mockResolvedValue(undefined),
@@ -47,7 +47,7 @@ function coreFolio(balance = 45000): CoreFolio {
   };
 }
 
-/** 미러링이 만들어 두었을 로컬 포스팅. */
+/** The local posting mirroring would have created. */
 function mirrored(overrides: Record<string, unknown> = {}) {
   return {
     id: 'pst-1',
@@ -124,7 +124,7 @@ describe('PosService — 룸차지', () => {
       expect.objectContaining({
         type: 'Charge',
         transactionCode: 'FNB',
-        // 어느 매장에서 단 요금인지 명세서만 봐도 알아야 한다.
+        // The bill alone has to show which outlet raised the charge.
         description: '[1층 레스토랑] 조식 2인',
         reference: 'CHK-1001',
       }),
@@ -133,7 +133,7 @@ describe('PosService — 룸차지', () => {
     expect(result.folioBalance).toBe('45000');
   });
 
-  // 어느 매장이 달았는지는 OPERA 가 모른다. 사본에만 남는다.
+  // OPERA does not know which outlet posted it. That stays only in our copy.
   it('사본에 아웃렛을 붙인다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
@@ -147,8 +147,8 @@ describe('PosService — 룸차지', () => {
   });
 
   /*
-   * 네트워크가 끊겨 POS 가 재전송하는 일은 흔하다. 확실히 아는 재시도까지 외부
-   * 호출을 태울 이유가 없다.
+   * A POS resending after a network drop is common. There is no reason to spend an
+   * external call on a retry we already recognise.
    */
   it('같은 전표를 다시 보내면 OPERA 를 부르지 않는다', async () => {
     const prisma = buildPrisma({
@@ -168,7 +168,7 @@ describe('PosService — 룸차지', () => {
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
-  // 빈 객실에 요금을 달면 아무도 받지 않는 청구가 생긴다.
+  // Charging an empty room creates a bill nobody will pay.
   it('재실 예약이 없는 객실은 거절한다', async () => {
     const prisma = buildPrisma({ reservation: { findFirst: jest.fn().mockResolvedValue(null) } });
     const core = buildCore();
@@ -191,7 +191,7 @@ describe('PosService — 룸차지', () => {
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
-  // 매장 직원은 폴리오 윈도가 무엇인지 모른다. 다음 행동까지 알려 줘야 한다.
+  // Shop staff do not know what a folio window is. They need the next step too.
   it('마감 거절을 단말이 읽을 수 있는 말로 바꾼다', async () => {
     const prisma = buildPrisma();
     const core = buildCore({
@@ -204,7 +204,7 @@ describe('PosService — 룸차지', () => {
     await expect(service.postCharge(OUTLET, CHARGE)).rejects.toThrow(/프런트에 문의/);
   });
 
-  // 다른 호텔 객실에 요금을 달 수 있으면 아웃렛 키 하나로 체인 전체가 열린다.
+  // If one outlet key could charge another hotel's rooms, it would open the whole chain.
   it('자기 호텔 안에서만 객실을 찾는다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
@@ -215,7 +215,7 @@ describe('PosService — 룸차지', () => {
     );
   });
 
-  // OPERA 가 받아 줬는데 사본에 없으면 취소도 대사도 할 수 없는 요금이 남는다.
+  // Accepted by OPERA but absent from our copy leaves a charge we can neither void nor reconcile.
   it('사본에서 거래를 찾지 못하면 조용히 넘기지 않는다', async () => {
     const prisma = buildPrisma({ txPosting: { findFirst: jest.fn().mockResolvedValue(null) } });
     const service = await buildService(prisma);
@@ -226,8 +226,8 @@ describe('PosService — 룸차지', () => {
 
 describe('PosService — 라우팅', () => {
   /*
-   * POS 단말은 이 예약의 정산 편성을 모른다. 회사가 객실료를, 손님이 부대비용을
-   * 내는 편성에서 단말이 보낸 창구를 그대로 믿으면 요금이 엉뚱한 쪽에 붙는다.
+   * A POS terminal does not know this reservation's billing split. Where the company
+   * pays the room and the guest pays extras, trusting its window misplaces the charge.
    */
   it('지시가 있으면 그 창구로 단다', async () => {
     const prisma = buildPrisma({
@@ -253,7 +253,7 @@ describe('PosService — 라우팅', () => {
     expect(result.window).toBe(1);
   });
 
-  // 단말이 창구를 지정했으면 그건 존중한다.
+  // A window the terminal did specify is respected.
   it('단말이 창구를 지정하면 지시를 보지 않는다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -300,8 +300,8 @@ describe('PosService — 취소', () => {
   });
 
   /*
-   * voidedById 가 이 포스팅을 취소한 조정을 가리킨다. 반대 방향 관계를 보면
-   * "이 조정이 취소한 원본" 이 나와 언제나 비어 있다.
+   * voidedById points at the adjustment that voided this posting. The reverse
+   * relation gives "the original this adjustment voided" and is always empty.
    */
   it('이미 취소된 전표는 다시 취소할 수 없다', async () => {
     const prisma = buildPrisma({
@@ -355,7 +355,7 @@ describe('PosService — 취소', () => {
 });
 
 describe('PosService — 요금 달 수 있는 객실', () => {
-  // 매장 단말에 손님 명단이 통째로 뜨면 그 자체로 유출이다.
+  // A full guest list on a shop terminal is a leak in itself.
   it('객실 번호와 성만 준다', async () => {
     const prisma = buildPrisma({
       reservation: {

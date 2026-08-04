@@ -14,8 +14,8 @@ import { assertWithinScope } from './property-scope';
 export class PropertiesController {
   constructor(private readonly properties: PropertiesService) {}
 
-  // 목록은 모든 역할이 본다 — 호텔 선택기를 그리려면 필요하다.
-  // 소속이 있는 계정에는 자기 호텔만 돌아간다.
+  // Every role reads the list — it is needed to draw the hotel picker.
+  // Accounts with a property get only their own hotel back.
   @Get()
   @ApiOperation({ summary: '접근 가능한 호텔 목록' })
   list(@CurrentUser() user: AuthUser, @Query() query: ListPropertiesDto) {

@@ -17,7 +17,7 @@ export class ReportsController {
     private readonly journal: JournalService,
   ) {}
 
-  // 매출 지표는 경영 정보다. 프런트데스크에게는 열지 않는다.
+  // Revenue metrics are management information. Not opened to the front desk.
   @Get('daily')
   @Roles(UserRole.MANAGER)
   @ApiOperation({ summary: '일별 실적 — 점유율·ADR·RevPAR·매출' })

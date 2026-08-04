@@ -31,7 +31,7 @@ const OUTAGE_INCLUDE = {
   createdBy: { select: { id: true, name: true } },
 } satisfies Prisma.RoomOutageInclude;
 
-/** 아직 오지 않았거나 진행 중인 예약. 나간 손님의 방은 막아도 된다. */
+/** Reservations not yet over. A departed guest's room may be taken out. */
 const LIVE_RESERVATION = [
   ReservationStatus.RESERVED,
   ReservationStatus.CONFIRMED,
@@ -48,20 +48,20 @@ const FROM_OPERA_KIND: Record<string, RoomOutageKind> = {
   OutOfService: RoomOutageKind.OUT_OF_SERVICE,
 };
 
-/** 사용 불가 구분에 대응하는 하우스키핑 상태. */
+/** Housekeeping status matching each outage kind. */
 const KIND_TO_ROOM_STATUS: Record<RoomOutageKind, RoomStatus> = {
   [RoomOutageKind.OUT_OF_ORDER]: RoomStatus.OUT_OF_ORDER,
   [RoomOutageKind.OUT_OF_SERVICE]: RoomStatus.OUT_OF_SERVICE,
 };
 
 /**
- * 사용 불가 객실.
+ * Room outages.
  *
- * 객실을 며칠 팔지 않겠다는 결정은 재고 그 자체라 OPERA 가 원천이다. 여기서
- * 로컬에만 기록하면 OPERA 로 들어온 예약이 공사 중인 객실에 배정된다.
+ * Deciding not to sell a room for some days is inventory itself, so OPERA owns it.
+ * Recorded locally only, a booking that reached OPERA lands in a room under work.
  *
- * 그래서 등록·해제는 모두 Core 를 거쳐 OPERA 에 먼저 반영하고, 돌아온 결과만
- * 로컬에 옮겨 적는다. 우리가 보낸 값이 아니라 저쪽이 확정한 값이 기준이다.
+ * So registering and releasing both go through Core to OPERA first, and only the
+ * result is copied locally. Their confirmed value is the reference, not ours.
  */
 @Injectable()
 export class RoomOutagesService {
@@ -77,7 +77,7 @@ export class RoomOutagesService {
     const where: Prisma.RoomOutageWhereInput = {
       ...(propertyId ? { propertyId } : {}),
       ...(query.roomNumber ? { room: { number: query.roomNumber } } : {}),
-      // 해제된 건은 기본적으로 감춘다. 지금 무엇을 못 파는지가 알고 싶은 것이다.
+      // Released outages are hidden by default. The question is what cannot be sold now.
       ...(query.includeReleased === 'true' ? {} : { releasedAt: null }),
       ...(onDate ? { startDate: { lte: onDate }, endDate: { gte: onDate } } : {}),
     };
@@ -92,11 +92,11 @@ export class RoomOutagesService {
   }
 
   /**
-   * 객실을 사용 불가로 등록한다.
+   * Takes a room out of service.
    *
-   * OPERA 도 거절하는 조건이지만 여기서 먼저 본다 — 우리 쪽에서 확실히 틀린
-   * 요청까지 외부 호출을 태울 이유가 없고, 배정 확인은 OPERA 보다 BE 가
-   * 더 잘 안다(객실 배정을 BE 가 들고 있다).
+   * OPERA rejects these conditions too, but we check first — there is no reason to
+   * spend a call on a request we know is wrong, and BE knows assignments better
+   * than OPERA does, since BE holds room assignment.
    */
   async create(dto: CreateRoomOutageDto, user: AuthUser): Promise<RoomOutage> {
     const property = await this.resolveProperty(dto.propertyId, user);
@@ -107,7 +107,7 @@ export class RoomOutagesService {
       );
     }
 
-    // 이미 지난 기간을 막아도 그 사이 판 객실이 되돌아오지 않는다. 실적만 어긋난다.
+    // Blocking a past range does not bring back rooms already sold. It only skews reports.
     const today = todayString();
     if (dto.endDate < today) {
       throw new BadRequestException(
@@ -125,7 +125,7 @@ export class RoomOutagesService {
     const startDate = parseDateOnly(dto.startDate);
     const endDate = parseDateOnly(dto.endDate);
 
-    // 같은 객실을 두 번 빼면 재고에서 두 번 깎인다.
+    // Taking one room out twice deducts it from inventory twice.
     const overlapping = await this.prisma.roomOutage.findFirst({
       where: {
         roomId: room.id,
@@ -141,10 +141,10 @@ export class RoomOutagesService {
     }
 
     /*
-     * 그 기간에 이 객실로 들어오기로 한 손님이 있으면 먼저 옮겨야 한다.
+     * Guests already booked into this room during the range have to be moved first.
      *
-     * 출발일은 그날 낮에 비므로 재고를 차지하는 마지막 밤은 출발일 전날이다.
-     * 그래서 arrivalDate <= endDate 와 departureDate > startDate 로 본다.
+     * The departure day frees up in the morning, so the last night held is the day
+     * before. Hence arrivalDate <= endDate and departureDate > startDate.
      */
     const assigned = await this.prisma.reservation.findFirst({
       where: {
@@ -162,7 +162,7 @@ export class RoomOutagesService {
       );
     }
 
-    // 오늘 당장 빼는데 손님이 들어 있으면 막는다. 미래 기간은 그때까지 나간다.
+    // Blocked if a guest is in the room today. A future range clears by then.
     if (room.occupied && dto.startDate <= today) {
       throw new ConflictException(
         `객실 ${room.number} 는 재실 중이라 지금부터 사용 불가로 둘 수 없습니다.`,
@@ -194,7 +194,7 @@ export class RoomOutagesService {
       throw error;
     }
 
-    // OPERA 가 확정한 값을 그대로 옮겨 적는다.
+    // The value OPERA confirmed is copied over as is.
     const covered = coversDate(result.startDate, result.endDate, today);
 
     return this.prisma.$transaction(async (tx) => {
@@ -213,8 +213,8 @@ export class RoomOutagesService {
         include: OUTAGE_INCLUDE,
       });
 
-      // 기간이 오늘을 포함할 때만 지금 상태를 바꾼다. 다음 주 공사 때문에
-      // 오늘 못 파는 것은 아니다.
+      // The current status changes only when the range covers today. Work next week
+      // does not make the room unsellable now.
       if (covered) {
         await tx.room.update({
           where: { id: room.id },
@@ -227,10 +227,10 @@ export class RoomOutagesService {
   }
 
   /**
-   * 사용 불가 해제.
+   * Releases an outage.
    *
-   * 복귀 상태는 등록할 때 정해 둔 값(대개 DIRTY)을 쓴다. CLEAN 으로 되돌리면
-   * 청소하지 않은 객실이 판매 가능으로 보인다.
+   * The return status is the one chosen at registration, usually DIRTY. Returning
+   * to CLEAN would put an uncleaned room back on sale.
    */
   async release(id: string, dto: ReleaseRoomOutageDto, user: AuthUser): Promise<RoomOutage> {
     const outage = await this.prisma.roomOutage.findUnique({
@@ -317,7 +317,7 @@ export class RoomOutagesService {
   }
 }
 
-/** OPERA 표기의 복귀 상태. 매핑은 하우스키핑과 같은 규칙을 쓴다. */
+/** Return status in OPERA's terms. The mapping follows the housekeeping rules. */
 function toOperaRoomStatusName(status: RoomStatus): string {
   const names: Record<RoomStatus, string> = {
     [RoomStatus.CLEAN]: 'Clean',
@@ -337,7 +337,7 @@ function toDateString(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
-/** 오늘(UTC). @db.Date 컬럼과 같은 기준을 쓴다. */
+/** Today in UTC, the same basis as @db.Date columns. */
 function todayString(): string {
   return new Date().toISOString().slice(0, 10);
 }

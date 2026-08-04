@@ -17,14 +17,14 @@ import type {
 } from './dto/rates.dto';
 
 /**
- * 요금 코드·시즌·패키지.
+ * Rate codes, seasons and packages.
  *
- * 요금은 OPERA 가 정한다 — 시즌·요일·프로모션·수익관리가 얽힌 결과라 우리가
- * 따로 계산하면 실제로 청구되는 금액과 갈린다. 그래서 사본을 두지 않고 매번
- * 저쪽 설정을 읽어 온다.
+ * OPERA sets rates — the result of seasons, weekdays, promotions and revenue
+ * management, so computing our own would diverge from what is actually charged.
+ * There is no local copy; their setup is read every time.
  *
- * 설정은 자주 바뀌지 않지만 틀리면 모든 예약의 금액이 틀어진다. 그래서 캐시로
- * 얻는 속도보다 "지금 OPERA 에 있는 값" 이 더 중요하다.
+ * The setup rarely changes, but when it is wrong every reservation is priced wrong.
+ * So "what OPERA holds right now" matters more than the speed a cache would buy.
  */
 @Injectable()
 export class RatesService {
@@ -33,7 +33,7 @@ export class RatesService {
     private readonly core: CoreClient,
   ) {}
 
-  // --- 조회 -----------------------------------------------------------------
+  // --- Reads ------------------------------------------------------------------
 
   async quote(query: QuoteRatesDto, user: AuthUser) {
     const property = await this.resolveProperty(query.propertyId, user);
@@ -73,7 +73,7 @@ export class RatesService {
     return { propertyId: property.id, items: result.items };
   }
 
-  // --- 요금 코드 -------------------------------------------------------------
+  // --- Rate codes --------------------------------------------------------------
 
   async createPlan(dto: CreateRatePlanDto, user: AuthUser): Promise<CoreRatePlan> {
     const property = await this.resolveProperty(dto.propertyId, user);
@@ -129,7 +129,7 @@ export class RatesService {
     );
   }
 
-  // --- 시즌 -----------------------------------------------------------------
+  // --- Seasons ------------------------------------------------------------------
 
   async addSeason(
     ratePlanCode: string,
@@ -142,7 +142,7 @@ export class RatesService {
     if (dto.endDate < dto.startDate) {
       throw new BadRequestException('종료일은 시작일보다 뒤여야 합니다.');
     }
-    // 요일을 모두 고르는 것은 고르지 않은 것과 같다. 빈 배열은 "매일" 로 보낸다.
+    // Picking every weekday is the same as picking none. An empty array means daily.
     const daysOfWeek = dto.daysOfWeek?.length === 7 ? undefined : dto.daysOfWeek;
     if (daysOfWeek && new Set(daysOfWeek).size !== daysOfWeek.length) {
       throw new BadRequestException('요일이 중복되었습니다.');
@@ -173,7 +173,7 @@ export class RatesService {
     );
   }
 
-  // --- 패키지 ---------------------------------------------------------------
+  // --- Packages -----------------------------------------------------------------
 
   async createPackage(dto: CreatePackageDto, user: AuthUser): Promise<CorePackage> {
     const property = await this.resolveProperty(dto.propertyId, user);
@@ -210,13 +210,13 @@ export class RatesService {
     );
   }
 
-  // --- 공통 -----------------------------------------------------------------
+  // --- Shared -------------------------------------------------------------------
 
   /**
-   * 금액표를 우리가 아는 객실 타입으로만 받는다.
+   * Amount tables are accepted only for room types we know.
    *
-   * OPERA 도 거절하지만 그쪽 메시지는 코드만 알려 준다. 어떤 코드를 쓸 수 있는지
-   * 여기서 알려 주는 편이 화면에서 고치기 쉽다.
+   * OPERA rejects them too, but its message only names the code. Saying which codes
+   * are valid here makes it easier to fix on the screen.
    */
   private async checkAmounts(
     property: Property,
@@ -262,7 +262,7 @@ export class RatesService {
     return property;
   }
 
-  /** OPERA 로 나가는 설정 변경은 성공·실패를 모두 남긴다. 요금은 돈에 직결된다. */
+  /** Setup changes going to OPERA log both success and failure. Rates are money. */
   private async delegate<T>(action: string, entityId: string, call: () => Promise<T>): Promise<T> {
     const log = await this.prisma.syncLog.create({
       data: {

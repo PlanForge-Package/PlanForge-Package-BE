@@ -26,11 +26,11 @@ export class CreatePostingDto {
   description!: string;
 
   /**
-   * 항상 양수로 보낸다. 잔액에 더할지 뺄지는 `type` 이 정한다 —
-   * CHARGE·TAX 는 더하고 PAYMENT 는 뺀다. 부호를 호출자가 정하게 하면
-   * 결제를 양수로 보내 잔액이 늘어나는 사고가 나기 쉽다.
+   * Always sent positive. Whether it adds to or subtracts from the balance is set
+   * by `type` — CHARGE and TAX add, PAYMENT subtracts. Letting the caller choose
+   * the sign invites sending a payment positive and growing the balance.
    *
-   * ADJUSTMENT 만 `negative: true` 로 차감 방향을 지정할 수 있다.
+   * Only ADJUSTMENT may pick the subtracting direction with `negative: true`.
    */
   @ApiProperty({ description: '금액 (항상 양수)', example: 240000 })
   @Type(() => Number)
@@ -88,10 +88,10 @@ export class OpenFolioDto {
 }
 
 /**
- * 보증금 수납.
+ * Deposit receipt.
  *
- * 전표 번호를 함께 보내면 같은 보증금을 두 번 받지 않는다 — 손님 돈이 두 번
- * 나가는 일은 되돌리기 어렵다.
+ * Sending a check number stops the same deposit being taken twice — money leaving
+ * a guest twice is hard to undo.
  */
 export class RecordDepositDto {
   @ApiProperty({ description: '받은 금액 (양수)', example: 100000 })

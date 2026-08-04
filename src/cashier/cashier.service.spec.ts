@@ -73,8 +73,8 @@ describe('CashierService — 근무조 개설', () => {
   });
 
   /*
-   * 열려 있는데 또 열면 수납이 어느 조에 붙는지 정할 수 없고, 마감 금액이 두
-   * 조로 나뉜다.
+   * Opening a second while one is open leaves no telling which shift a receipt
+   * belongs to, and the closing amount splits across both.
    */
   it('이미 열린 조가 있으면 거절한다', async () => {
     const prisma = buildPrisma({
@@ -122,7 +122,7 @@ describe('CashierService — 집계', () => {
     expect(summary?.collected).toBe('320000.00');
   });
 
-  // 환불한 만큼 금고에서 나갔다.
+  // A refund is that much out of the drawer.
   it('환불한 금액은 빼고 센다', async () => {
     const prisma = buildPrisma({
       cashierShift: { findFirst: jest.fn().mockResolvedValue(shift()) },
@@ -136,7 +136,7 @@ describe('CashierService — 집계', () => {
     expect(summary?.byMethod.CASH).toBe('30000.00');
   });
 
-  // 매입 전에는 아직 우리 돈이 아니다.
+  // Before capture it is not our money yet.
   it('승인만 된 결제는 집계에서 뺀다', async () => {
     const prisma = buildPrisma({
       cashierShift: { findFirst: jest.fn().mockResolvedValue(shift()) },
@@ -197,7 +197,7 @@ describe('CashierService — 마감', () => {
 
     const { summary } = await service.close('shift-1', { countedCash: 145000 }, ACTOR);
 
-    // 있어야 할 150,000 인데 145,000 을 셌다 — 5,000 부족.
+    // 150,000 expected but 145,000 counted — 5,000 short.
     expect(summary.expectedCash).toBe('150000.00');
     expect(summary.difference).toBe('-5000.00');
   });
@@ -220,8 +220,8 @@ describe('CashierService — 마감', () => {
   });
 
   /*
-   * 막으면 맞을 때까지 아무도 마감하지 않고, 다음 조의 수납이 이 조에 섞인다.
-   * 차이는 숨기지 말고 기록해서 다음 날 확인하게 하는 편이 낫다.
+   * Blocking it means nobody closes until it balances, and the next shift's receipts
+   * mix in. Better recorded openly and checked the next day.
    */
   it('차이가 나도 마감을 막지 않는다', async () => {
     const prisma = buildPrisma({
@@ -248,7 +248,7 @@ describe('CashierService — 마감', () => {
     expect(prisma.cashierShift.update.mock.calls[0][0].data.notes).toBe('5천원 부족 — 확인 중');
   });
 
-  // 남의 조를 마감하면 그 사람은 자기가 받은 돈을 확인할 기회를 잃는다.
+  // Closing someone else's shift denies them the chance to check what they took.
   it('남의 근무조는 마감할 수 없다', async () => {
     const prisma = buildPrisma({
       cashierShift: { findUnique: jest.fn().mockResolvedValue(shift({ userId: 'user-9' })) },

@@ -88,17 +88,17 @@ export class CreateBookingDto extends CheckAvailabilityDto {
   blockCode?: string;
 
   /**
-   * 매진이어도 대기로 받는다.
+   * Take a waitlist booking even when sold out.
    *
-   * 대기 예약은 재고를 차지하지 않고, 자리가 나면 확정으로 올린다. 이 값을
-   * 주지 않으면 매진일 때 OPERA 가 예약 자체를 거절한다.
+   * A waitlisted reservation holds no inventory and is confirmed when a room opens.
+   * Without this flag OPERA rejects the booking outright when sold out.
    */
   @ApiPropertyOptional({ description: '매진이어도 대기로 받을지', default: false })
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   waitlist?: boolean;
 
-  /** 보증 방식. 비우면 6PM — 보증 없는 예약은 18시까지만 잡아 둔다. */
+  /** Guarantee type. Empty means 6PM — an unguaranteed booking is held until 18:00. */
   @ApiPropertyOptional({ description: 'SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP' })
   @IsOptional()
   @IsString()
@@ -106,10 +106,10 @@ export class CreateBookingDto extends CheckAvailabilityDto {
   guaranteeCode?: string;
 
   /**
-   * 예약 경로.
+   * Booking origin.
    *
-   * 허용 코드 검증은 OPERA 가 한다 — 호텔마다 설정이 다르므로 여기에 목록을
-   * 박아 두면 설정이 바뀔 때마다 두 곳을 고쳐야 한다.
+   * OPERA validates the allowed codes — the setup differs per hotel, so a list baked
+   * in here would need fixing in two places every time it changes.
    */
   @ApiPropertyOptional({ example: 'OTA', description: 'DIRECT · PHONE · WALKIN · OTA · GDS …' })
   @IsOptional()
@@ -130,9 +130,9 @@ export class CreateBookingDto extends CheckAvailabilityDto {
   channelCode?: string;
 
   /**
-   * `@ValidateNested()` 가 없으면 전역 ValidationPipe 의 whitelist 가 중첩 객체를
-   * "검증 대상이 아닌 속성" 으로 보고 통째로 걷어낸다. forbidNonWhitelisted 까지
-   * 켜 두었으므로 요청 자체가 400 으로 거절된다.
+   * Without `@ValidateNested()` the global ValidationPipe's whitelist treats a nested
+   * object as an unvalidated property and strips it entirely. With forbidNonWhitelisted
+   * also on, the request itself is rejected with a 400.
    */
   @ApiProperty({ type: GuestInputDto })
   @ValidateNested()
@@ -186,7 +186,7 @@ export class CancelBookingDto {
   reason?: string;
 }
 
-/** 객실 공유. 상대 예약을 지정해 한 묶음으로 만든다. */
+/** Room share. Names the partner reservation to group with. */
 export class ShareReservationDto {
   @ApiProperty({ description: '함께 묶을 상대 예약 ID' })
   @IsString()
@@ -194,7 +194,7 @@ export class ShareReservationDto {
   withReservationId!: string;
 }
 
-/** 보증 방식. 손님이 안 나타났을 때 무엇을 근거로 받을지가 여기서 갈린다. */
+/** Guarantee type. It decides what we can charge when the guest never shows. */
 export const GUARANTEE_CODES = ['SIXPM', 'CREDITCARD', 'DEPOSIT', 'COMPANY', 'COMP'] as const;
 
 export class SetGuaranteeDto {

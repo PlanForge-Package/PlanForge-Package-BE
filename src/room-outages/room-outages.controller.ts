@@ -12,10 +12,10 @@ import {
 import { RoomOutagesService } from './room-outages.service';
 
 /**
- * 사용 불가 객실.
+ * Room outages.
  *
- * 조회는 전 역할이 한다 — 하우스키핑도 프론트도 오늘 어느 방을 못 쓰는지 알아야
- * 한다. 등록·해제는 재고를 줄이는 결정이므로 지배인과 프론트데스크만 한다.
+ * Every role may read — housekeeping and the front desk both need to know which
+ * rooms are out today. Registering and releasing cuts inventory, so managers and the front desk only.
  */
 @ApiTags('room-outages')
 @ApiBearerAuth()

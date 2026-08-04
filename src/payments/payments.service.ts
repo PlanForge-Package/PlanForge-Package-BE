@@ -16,21 +16,21 @@ import { assertWithinScope } from '../properties/property-scope';
 import { PAYMENT_DRIVER, PaymentError, type PaymentDriver } from './payment.driver';
 import type { AuthorizePaymentDto, CapturePaymentDto, RefundPaymentDto } from './dto/payments.dto';
 
-/** 결제 거래 코드. 폴리오에 올라갈 때 쓴다. */
+/** Payment transaction code, used when posting to the folio. */
 const PAYMENT_TRANSACTION_CODE = '5000';
 
 /**
- * 결제.
+ * Payments.
  *
- * 승인 → 매입 → (필요하면) 환불의 세 단계를 그대로 둔다. 하나로 합치면 "돈은
- * 빠져나갔는데 폴리오에는 없다" 또는 그 반대가 생겼을 때 어디서 끊겼는지 알 수
- * 없다.
+ * Authorise, capture and refund stay as three steps. Merged into one, there is no
+ * way to tell where it broke when money left but the folio has no payment, or
+ * the other way round.
  *
- * **폴리오에 결제가 올라가는 시점은 매입이다.** 승인만으로 잔액을 줄이면 매입에
- * 실패했을 때 받지도 않은 돈이 받은 것으로 남는다.
+ * **A payment lands on the folio at capture.** Reducing the balance on the
+ * authorisation alone leaves money we never took recorded as taken.
  *
- * 카드 번호와 CVV 는 어디에도 저장하지 않는다. 단말이 PG 에 직접 태우고 우리는
- * 결과 토큰만 받는다.
+ * Card numbers and CVV are never stored anywhere. The terminal talks to the PSP
+ * directly and we keep only the resulting token.
  */
 @Injectable()
 export class PaymentsService {
@@ -53,17 +53,17 @@ export class PaymentsService {
 
     return {
       reservationId,
-      /** mock 이면 실제로 돈이 오가지 않는다. 화면이 알려야 한다. */
+      /** In mock mode no money actually moves. The screen has to say so. */
       driverMode: this.driver.mode,
       items,
     };
   }
 
   /**
-   * 승인.
+   * Authorisation.
    *
-   * 같은 멱등키로 다시 들어오면 새로 긁지 않고 이미 만든 것을 돌려준다. 손님
-   * 돈이 두 번 나가는 일은 그 무엇보다 되돌리기 어렵다.
+   * The same idempotency key returns the existing record instead of charging
+   * again. Money leaving a guest twice is harder to undo than anything else.
    */
   async authorize(
     reservationId: string,
@@ -91,11 +91,11 @@ export class PaymentsService {
     const amount = new Prisma.Decimal(dto.amount);
 
     /*
-     * 현금·계좌이체는 PG 를 거치지 않는다.
+     * Cash and bank transfer do not go through the PSP.
      *
-     * 사람이 받아 확인한 돈이므로 승인 단계 없이 곧바로 매입 상태로 둔다. 굳이
-     * 두 단계로 나누면 프런트가 "매입" 을 한 번 더 눌러야 하고, 그걸 잊으면
-     * 받은 돈이 폴리오에 없다.
+     * A person took and checked the money, so it goes straight to captured. Split
+     * into two steps, the front desk has to press "capture" again, and forgetting
+     * leaves money taken but absent from the folio.
      */
     const shiftId = await this.openShiftId(user);
 
@@ -134,7 +134,7 @@ export class PaymentsService {
       const declined = error instanceof PaymentError && error.declined;
       this.logger.warn(`승인 실패 (${declined ? '거절' : '결과 불명'}): ${describe(error)}`);
 
-      // 거절은 이력을 남긴다. 같은 카드로 반복 시도했는지 나중에 확인해야 한다.
+      // Declines are logged. Repeated attempts on one card need to be traceable.
       if (declined) {
         await this.prisma.payment.create({
           data: {
@@ -152,10 +152,10 @@ export class PaymentsService {
       }
 
       /*
-       * 결과 불명은 이력을 남기지 않는다.
+       * An unknown outcome is not recorded.
        *
-       * 멱등키를 소진해 버리면 같은 키로 다시 시도할 수 없고, 실제로는 승인이
-       * 났는지 여부를 확인할 방법도 막힌다. PG 조회로 확인하는 편이 맞다.
+       * Burning the idempotency key blocks retrying with it and also blocks
+       * finding out whether the authorisation went through. Ask the PSP instead.
        */
       throw new BadRequestException(
         '결제 대행사 응답을 받지 못했습니다. 승인되었을 수 있으니 PG 관리자에서 확인해 주세요.',
@@ -181,11 +181,11 @@ export class PaymentsService {
   }
 
   /**
-   * 지금 열려 있는 내 근무조.
+   * My currently open shift.
    *
-   * 조를 열지 않고도 수납할 수 있게 둔다 — 손님을 세워 두고 "먼저 근무조를
-   * 여세요" 라고 할 수는 없다. 대신 그 수납은 어느 조에도 붙지 않으므로 마감
-   * 집계에서 빠진다.
+   * Taking money without opening a shift is allowed — we cannot keep a guest
+   * waiting to "open a shift first". Such a receipt belongs to no shift and so
+   * falls outside the closing totals.
    */
   private async openShiftId(user: AuthUser): Promise<string | undefined> {
     const shift = await this.prisma.cashierShift.findFirst({
@@ -196,14 +196,14 @@ export class PaymentsService {
     return shift?.id;
   }
 
-  /** 매입. 이때 폴리오에 결제가 올라간다. */
+  /** Capture. This is when the payment lands on the folio. */
   async capture(paymentId: string, dto: CapturePaymentDto, user: AuthUser): Promise<Payment> {
     const payment = await this.load(paymentId, user);
 
     if (payment.status !== PaymentStatus.AUTHORIZED) {
       throw new ConflictException(`승인 상태가 아닙니다(${payment.status}).`);
     }
-    // 현금·이체는 승인 단계 없이 곧바로 매입되므로 여기에 올 수 없다. 방어적으로 막는다.
+    // Cash and transfer capture immediately, so they never reach here. Guarded anyway.
     if (!payment.vendorTxnId) {
       throw new BadRequestException('PG 를 거치지 않은 결제는 매입할 수 없습니다.');
     }
@@ -230,7 +230,7 @@ export class PaymentsService {
     return updated;
   }
 
-  /** 승인 취소. 매입 전에만 된다. */
+  /** Void. Only possible before capture. */
   async void(paymentId: string, user: AuthUser): Promise<Payment> {
     const payment = await this.load(paymentId, user);
 
@@ -258,10 +258,10 @@ export class PaymentsService {
   }
 
   /**
-   * 환불.
+   * Refund.
    *
-   * 매입 후에 쓴다. 폴리오에는 반대 부호 포스팅이 하나 더 붙는다 — 원래 결제를
-   * 지우면 손님 명세서에서 결제가 통째로 사라져 무엇이 정정됐는지 알 수 없다.
+   * Used after capture. A second posting with the opposite sign is added — deleting
+   * the original would remove the payment from the guest's bill entirely.
    */
   async refund(paymentId: string, dto: RefundPaymentDto, user: AuthUser): Promise<Payment> {
     const payment = await this.load(paymentId, user);
@@ -279,10 +279,10 @@ export class PaymentsService {
     }
 
     /*
-     * 현금·이체는 PG 를 거치지 않았으므로 환불도 거치지 않는다.
+     * Cash and transfer never went through the PSP, so the refund does not either.
      *
-     * 부르면 PG 가 모르는 거래라며 거절해 현금 환불 자체가 막힌다. 실제 돈은
-     * 프런트가 손으로 내주고, 여기서는 기록만 맞춘다.
+     * Called anyway, the PSP rejects an unknown transaction and blocks the cash
+     * refund. The front desk hands the money over; here we only match the record.
      */
     if (payment.vendorTxnId) {
       try {
@@ -304,7 +304,7 @@ export class PaymentsService {
       type: 'Adjustment',
       transactionCode: PAYMENT_TRANSACTION_CODE,
       description: `[환불] ${payment.maskedCard ?? payment.method}${dto.reason ? ` — ${dto.reason}` : ''}`,
-      // 결제는 음수로 올라가 있으므로 환불은 양수다. Adjustment 의 기본 방향이다.
+      // Payments are negative, so a refund is positive — the Adjustment default.
       amount: amount.toNumber(),
       reference: `PAY-${payment.id}-R${refunded.toFixed(0)}`,
     });
@@ -314,7 +314,7 @@ export class PaymentsService {
 
   // ---------------------------------------------------------------------------
 
-  /** 결제는 음수로 올라간다. 폴리오 잔액이 곧 거래 합계이기 때문이다. */
+  /** Payments post negative, because the folio balance is the sum of transactions. */
   private async postPayment(
     reservationId: string,
     window: number,
@@ -328,20 +328,20 @@ export class PaymentsService {
       description:
         description ??
         `${payment.method} 결제${payment.maskedCard ? ` ${payment.maskedCard}` : ''}`,
-      // 부호는 OPERA 가 종류로 정한다. 우리는 양수로 보낸다.
+      // OPERA sets the sign from the type. We send a positive amount.
       amount: amount.toNumber(),
       reference: `PAY-${payment.id}`,
     });
   }
 
   /**
-   * 폴리오 반영은 OPERA 를 거친다.
+   * The folio is updated through OPERA.
    *
-   * 로컬에만 적으면 OPERA 의 계산서에는 결제가 없고 우리 잔액만 줄어든다.
-   * 손님은 두 장의 다른 명세서를 받는다.
+   * Written locally only, OPERA's bill has no payment while our balance drops.
+   * The guest receives two different statements.
    *
-   * 전표 번호에 결제 식별자를 넣어 재전송을 막는다 — 같은 결제가 두 번 올라가면
-   * 받지 않은 돈이 받은 것으로 남는다.
+   * The payment id goes in the check number to stop resends — posting the same
+   * payment twice records money we never took as taken.
    */
   private async postToFolio(
     reservationId: string,
@@ -367,7 +367,7 @@ export class PaymentsService {
     await this.prisma.$transaction(async (tx) => {
       await mirrorFolios(tx, reservationId, reservation.currency, [folio]);
 
-      // 어느 결제가 만든 거래인지는 OPERA 가 모른다. 대사할 때 필요하다.
+      // OPERA does not know which payment made the posting. Needed when reconciling.
       const posting = await tx.posting.findFirst({
         where: { folio: { reservationId, window }, reference: input.reference },
       });

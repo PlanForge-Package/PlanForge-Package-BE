@@ -19,7 +19,7 @@ import { UsersService } from './users.service';
 
 @ApiTags('users')
 @ApiBearerAuth()
-// 계정 관리는 관리자만. 역할을 바꿀 수 있다는 것은 곧 모든 권한을 줄 수 있다는 뜻이다.
+// Account management is admin-only. Being able to change a role is being able to grant anything.
 @Roles(UserRole.ADMIN)
 @Controller('users')
 export class UsersController {

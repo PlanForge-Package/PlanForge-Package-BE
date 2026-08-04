@@ -5,7 +5,7 @@ import { CoreClient } from '../core/core.client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ArService } from './ar.service';
 
-// 미러링은 folio-mirror.spec.ts 가 따로 본다.
+// Mirroring is covered separately by folio-mirror.spec.ts.
 jest.mock('../folios/folio-mirror', () => ({
   ...jest.requireActual('../folios/folio-mirror'),
   mirrorFolios: jest.fn().mockResolvedValue(undefined),
@@ -183,8 +183,8 @@ describe('ArService — 거래처', () => {
 
 describe('ArService — 폴리오 이관', () => {
   /*
-   * 폴리오만 비우고 원장에 올리지 않으면 받을 돈이 사라지고, 원장에만 올리고
-   * 폴리오를 두면 손님이 체크아웃하지 못한다.
+   * Emptying only the folio loses the receivable; raising only in the ledger leaves
+   * the guest unable to check out.
    */
   it('OPERA 폴리오를 비우고 원장에 청구로 올린다', async () => {
     const prisma = buildPrisma();
@@ -204,7 +204,7 @@ describe('ArService — 폴리오 이관', () => {
     expect(created.reservationId).toBe('res-1');
   });
 
-  // 같은 창구를 두 번 넘기면 거래처에 두 배로 청구된다.
+  // Transferring one window twice bills the account twice.
   it('같은 창구는 같은 전표 번호로 넘긴다', async () => {
     const prisma = buildPrisma();
     const core = buildCore();
@@ -238,7 +238,7 @@ describe('ArService — 폴리오 이관', () => {
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
-  // 음수면 거래처가 아니라 손님에게 돌려줄 돈이다.
+  // A negative balance is owed back to the guest, not to the account.
   it('마이너스 잔액은 넘기지 않는다', async () => {
     const prisma = buildPrisma({
       folio: {
@@ -261,7 +261,7 @@ describe('ArService — 폴리오 이관', () => {
     await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toThrow(/마감된 폴리오/);
   });
 
-  // 중지한 거래처로 넘기면 청구할 곳 없는 미수가 쌓인다.
+  // Transferring to a suspended account piles up receivables with nobody to bill.
   it('중지된 거래처로는 넘기지 않는다', async () => {
     const prisma = buildPrisma({
       arAccount: { findUnique: jest.fn().mockResolvedValue(account({ active: false })) },
@@ -282,8 +282,8 @@ describe('ArService — 폴리오 이관', () => {
   });
 
   /*
-   * 한도는 "이만큼까지는 받아 주겠다" 는 약속이다. 넘긴 뒤에 알면 이미 손님은
-   * 나갔고 청구할 수 없는 금액이 남는다.
+   * The limit is a promise of how much we will carry. Finding out afterwards means
+   * the guest has left and the amount cannot be billed.
    */
   it('여신 한도를 넘으면 막는다', async () => {
     const prisma = buildPrisma({
@@ -334,14 +334,14 @@ describe('ArService — 폴리오 이관', () => {
 });
 
 describe('ArService — 입금', () => {
-  // 잔액이 곧 거래 합계이기 때문이다.
+  // Because the balance is the sum of transactions.
   it('입금은 음수로 올라간다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
 
     await service.recordPayment('acc-1', { amount: 50000, description: '10월분' }, ACTOR);
 
-    // 입금과 배분은 한 트랜잭션에서 함께 쓴다. 하나만 남으면 장부가 어긋난다.
+    // Payment and allocations are written in one transaction. One alone skews the books.
     const created = prisma.tx.arTransaction.create.mock.calls[0][0].data;
     expect(created.amount.toString()).toBe('-50000');
     expect(created.type).toBe(ArTransactionType.PAYMENT);
@@ -361,7 +361,7 @@ describe('ArService — 입금', () => {
     expect(prisma.tx.arAllocation.create).not.toHaveBeenCalled();
   });
 
-  // 입금을 미청구로 세면 다음 달 청구서가 지난달 입금만큼 깎인다.
+  // Counting payments as unbilled shrinks next month's invoice by last month's payment.
   it('미청구 금액에 입금은 세지 않는다', async () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
@@ -394,7 +394,7 @@ describe('ArService — 청구서', () => {
     expect(created.number).toMatch(/^INV-\d{4}-0001$/);
   });
 
-  // 입금은 청구하는 것이 아니라 청구한 것을 갚는 것이다. 쓸어 담으면 두 번 깎인다.
+  // A payment repays a charge rather than being one. Swept in, it deducts twice.
   it('입금은 청구서에 담지 않는다', async () => {
     const prisma = buildPrisma({
       arTransaction: { findMany: jest.fn().mockResolvedValue(UNBILLED) },
@@ -409,7 +409,7 @@ describe('ArService — 청구서', () => {
     });
   });
 
-  // 두 번 청구하면 거래처가 두 번 낸다.
+  // Billing twice makes the account pay twice.
   it('발행한 거래를 청구서에 묶는다', async () => {
     const prisma = buildPrisma({
       arTransaction: { findMany: jest.fn().mockResolvedValue(UNBILLED) },
@@ -448,7 +448,7 @@ describe('ArService — 청구서', () => {
     );
   });
 
-  // 입금만 남았으면 받을 돈이 아니라 돌려줄 돈이다.
+  // With only payments left, it is money to return, not money to collect.
   it('합계가 0 이하면 만들지 않는다', async () => {
     const prisma = buildPrisma({
       arTransaction: {
@@ -472,8 +472,8 @@ describe('ArService — 청구서', () => {
   });
 
   /*
-   * 무효로 돌리면 묶여 있던 거래를 풀어 준다 — 그러지 않으면 잘못 발행한
-   * 청구서 때문에 그 거래를 영영 청구하지 못한다.
+   * Voiding releases the transactions it held — otherwise a wrongly issued invoice
+   * would keep them from ever being billed.
    */
   it('무효로 돌리면 거래를 다시 풀어 준다', async () => {
     const prisma = buildPrisma({
@@ -534,7 +534,7 @@ describe('ArService — 청구서', () => {
   });
 });
 
-/** 열린 청구서. 만기가 빠른 것이 앞이다. */
+/** Open invoices, earliest due date first. */
 function openInvoice(overrides: Record<string, unknown> = {}) {
   return {
     id: 'inv-1',
@@ -573,7 +573,7 @@ describe('ArService — 부분 수금', () => {
     expect(result.unapplied).toBe('0.00');
   });
 
-  // 다 받지 않았는데 수금으로 넘기면 남은 금액을 독촉하지 않게 된다.
+  // Marking an incompletely paid invoice as paid stops us chasing what is left.
   it('일부만 받으면 청구서를 수금으로 넘기지 않는다', async () => {
     const prisma = buildPrisma({
       arInvoice: { findMany: jest.fn().mockResolvedValue([openInvoice()]) },
@@ -612,7 +612,7 @@ describe('ArService — 부분 수금', () => {
     expect(update.data.status).toBe(ArInvoiceStatus.PAID);
   });
 
-  // 남은 금액보다 많이 붙이면 받지 않은 돈으로 청구서를 지우는 것이 된다.
+  // Allocating more than is outstanding clears an invoice with money we never got.
   it('남은 금액보다 많이 붙이지 못한다', async () => {
     const prisma = buildPrisma({
       arInvoice: { findMany: jest.fn().mockResolvedValue([openInvoice()]) },
@@ -691,7 +691,7 @@ describe('ArService — 부분 수금', () => {
     ).rejects.toThrow(/두 번 지정/);
   });
 
-  // 오래 묵은 미수부터 정리하는 것이 보통이다.
+  // Older receivables are normally cleared first.
   it('자동 배분은 만기가 빠른 청구서부터 채운다', async () => {
     const prisma = buildPrisma({
       arInvoice: {
@@ -786,7 +786,7 @@ describe('ArService — 연체', () => {
     const result = await service.aging({ asOf: '2026-08-04' }, ACTOR);
     const row = result.items[0];
 
-    // 8/10 만기는 아직 아니고, 7/20 은 15일, 5/1 은 95일 지났다.
+    // 8/10 is not due yet; 7/20 is 15 days over and 5/1 is 95 days over.
     expect(row?.buckets.current).toBe('100000.00');
     expect(row?.buckets.days30).toBe('100000.00');
     expect(row?.buckets.over90).toBe('100000.00');
@@ -810,7 +810,7 @@ describe('ArService — 연체', () => {
     expect(result.items[0]?.total).toBe('30000.00');
   });
 
-  // 상태가 늦게 따라오는 청구서까지 독촉하면 이미 받은 돈을 다시 달라고 하게 된다.
+  // Chasing an invoice whose status merely lags means asking again for money already received.
   it('남은 금액이 없으면 빼고 센다', async () => {
     const prisma = buildPrisma({
       arInvoice: {

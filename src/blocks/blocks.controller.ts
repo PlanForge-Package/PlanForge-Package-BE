@@ -13,7 +13,7 @@ import { CreateBlockDto, ListBlocksDto, UpdateBlockDto } from './dto/blocks.dto'
 export class BlocksController {
   constructor(private readonly blocks: BlocksService) {}
 
-  // 조회는 프런트도 필요하다 — 단체 손님이 도착하면 어느 블록인지 확인해야 한다.
+  // The front desk reads them too — an arriving group has to be matched to its block.
   @Get()
   @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
   @ApiOperation({ summary: '단체 블록 목록 — OPERA 조회 후 미러링' })
@@ -35,7 +35,7 @@ export class BlocksController {
     return this.blocks.roomingList(id, user);
   }
 
-  // 블록 생성·수정은 재고를 잡는 행위라 프런트 데스크 권한 밖이다.
+  // Creating and editing a block holds inventory, which is beyond front-desk authority.
   @Post()
   @Roles(UserRole.MANAGER)
   @ApiOperation({ summary: '블록 생성 — 재고 확보는 OPERA 가 판단합니다' })

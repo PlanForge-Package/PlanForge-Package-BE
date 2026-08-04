@@ -35,11 +35,11 @@ export class HousekeepingService {
   ) {}
 
   /**
-   * 객실 상태 변경.
+   * Room status change.
    *
-   * 객실 상태는 호텔의 기록이므로 OPERA 가 원천이다. 프론트데스크의 재고 판단과
-   * 하우스키핑의 청소 상태가 같은 값을 봐야 하는데, PlanForge 가 따로 들고 있으면
-   * 체크인 가능 여부가 두 시스템에서 달라진다.
+   * Room status is the hotel's record, so OPERA owns it. The front desk's inventory
+   * view and housekeeping's cleaning state must be the same value; held separately
+   * in PlanForge, the two disagree on whether a room can be checked into.
    */
   async updateRoomStatus(roomId: string, dto: UpdateRoomStatusDto, user: AuthUser) {
     const room = await this.prisma.room.findUnique({
@@ -51,7 +51,7 @@ export class HousekeepingService {
     }
     assertWithinScope(user, room.propertyId);
 
-    // OPERA 도 거절하지만 여기서 먼저 막는다 — 명백히 틀린 요청까지 외부 호출을 태울 이유가 없다.
+    // OPERA rejects it too, but we stop it first — an obviously wrong request is not worth a call.
     const blocking =
       dto.status === RoomStatus.OUT_OF_ORDER || dto.status === RoomStatus.OUT_OF_SERVICE;
     if (room.occupied && blocking) {
@@ -67,7 +67,7 @@ export class HousekeepingService {
         reason: dto.reason,
       });
 
-      // OPERA 가 확정한 값을 그대로 반영한다. 우리가 보낸 값이 아니라 저쪽이 기준이다.
+      // The value OPERA confirmed is copied over. Their value is the reference, not ours.
       const updated = await this.prisma.room.update({
         where: { id: roomId },
         data: {
@@ -86,11 +86,11 @@ export class HousekeepingService {
   }
 
   /**
-   * 배정 가능한 하우스키핑 직원.
+   * Housekeeping staff available for assignment.
    *
-   * 계정 목록(`/users`)은 ADMIN 전용이다. 매니저가 배정하려면 담당자 후보가
-   * 필요한데, 그렇다고 전체 계정을 열어 줄 이유는 없다. 이 호텔의 활성
-   * 하우스키핑 직원만, 배정에 필요한 최소 정보만 돌려준다.
+   * The account list (`/users`) is admin-only. A manager assigning work needs
+   * candidates, but that is no reason to open every account. Only this hotel's
+   * active housekeeping staff are returned, with the minimum needed to assign.
    */
   async listAttendants(propertyIdInput: string | undefined, user: AuthUser) {
     const property = await this.resolveProperty(propertyIdInput, user);
@@ -99,7 +99,7 @@ export class HousekeepingService {
       where: {
         role: UserRole.HOUSEKEEPING,
         active: true,
-        // 본사 소속(propertyId=null)은 어느 호텔에나 투입할 수 있다.
+        // Head-office staff (propertyId=null) can be deployed to any hotel.
         OR: [{ propertyId: property.id }, { propertyId: null }],
       },
       select: { id: true, name: true, role: true },
@@ -110,10 +110,10 @@ export class HousekeepingService {
   }
 
   /**
-   * 근무일의 작업 목록.
+   * Tasks for a working day.
    *
-   * 하우스키핑 역할은 자기 작업만 본다. 남의 배정을 들여다볼 이유가 없고,
-   * 화면에 전체가 뜨면 자기 몫을 찾기 어렵다.
+   * The housekeeping role sees only its own tasks. There is no reason to look at
+   * someone else's, and a full list makes finding your own harder.
    */
   async listTasks(query: ListTasksDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, query.propertyId);
@@ -143,10 +143,10 @@ export class HousekeepingService {
   }
 
   /**
-   * 근무일 작업을 만든다.
+   * Creates the day's tasks.
    *
-   * 청소가 필요한 객실(DIRTY)과 재실 객실을 대상으로 한다. 이미 만들어진 작업은
-   * 건드리지 않아 여러 번 눌러도 배정이 초기화되지 않는다.
+   * Covers rooms needing cleaning (DIRTY) and occupied rooms. Existing tasks are
+   * left alone, so pressing again never resets the assignments.
    */
   async generateTasks(dto: GenerateTasksDto, user: AuthUser) {
     const property = await this.resolveProperty(dto.propertyId, user);
@@ -156,7 +156,7 @@ export class HousekeepingService {
     const rooms = await this.prisma.room.findMany({
       where: {
         propertyId: property.id,
-        // 판매 불가 객실은 청소 대상이 아니다. 정비가 먼저다.
+        // Rooms out of sale are not cleaning targets. Maintenance comes first.
         status: { in: [RoomStatus.DIRTY, RoomStatus.CLEAN, RoomStatus.INSPECTED] },
         OR: [{ status: RoomStatus.DIRTY }, { occupied: true }],
       },
@@ -180,7 +180,7 @@ export class HousekeepingService {
     return { date: dateString, created: created.length, existing: known.size };
   }
 
-  /** 작업 배정. 빈 값이면 배정을 해제한다. */
+  /** Task assignment. An empty value unassigns it. */
   async assignTask(taskId: string, dto: AssignTaskDto, user: AuthUser) {
     const task = await this.loadTask(taskId, user);
 
@@ -189,7 +189,7 @@ export class HousekeepingService {
       if (!assignee || !assignee.active) {
         throw new BadRequestException('배정할 수 없는 계정입니다.');
       }
-      // 다른 호텔 직원에게 배정하면 그 직원은 자기 화면에서 이 작업을 볼 수 없다.
+      // Assigned to another hotel's staff, that person never sees the task on their screen.
       if (assignee.propertyId && assignee.propertyId !== task.propertyId) {
         throw new BadRequestException('다른 호텔 소속 직원에게는 배정할 수 없습니다.');
       }
@@ -203,10 +203,10 @@ export class HousekeepingService {
   }
 
   /**
-   * 작업 진행 상태 변경.
+   * Task progress change.
    *
-   * 하우스키핑 역할은 자기 작업만 바꿀 수 있다. 남의 작업을 완료 처리하면
-   * 실제로는 청소되지 않은 객실이 판매 가능으로 올라간다.
+   * The housekeeping role can change only its own tasks. Completing someone else's
+   * puts a room that was never cleaned back on sale.
    */
   async updateTask(taskId: string, dto: UpdateTaskDto, user: AuthUser) {
     const task = await this.loadTask(taskId, user);
@@ -231,11 +231,11 @@ export class HousekeepingService {
   }
 
   /**
-   * 객실 상태와 실제 재실이 어긋난 곳을 찾는다.
+   * Finds rooms whose status and actual occupancy disagree.
    *
-   * OPERA 의 객실 상태와 예약의 재실 여부가 갈리면 프론트데스크가 팔 수 없는
-   * 방을 팔거나, 비어 있는 방을 재실로 보고 놓친다. 하우스키핑이 매일 확인하는
-   * 항목이라 별도로 뽑아 준다.
+   * When OPERA's room status and the reservation's in-house flag split, the front
+   * desk sells a room it cannot sell, or misses an empty one it thinks is occupied.
+   * Housekeeping checks this daily, so it is pulled out separately.
    */
   async findDiscrepancies(propertyIdInput: string | undefined, user: AuthUser) {
     const property = await this.resolveProperty(propertyIdInput, user);
@@ -261,19 +261,19 @@ export class HousekeepingService {
       reservation: string | null;
     };
 
-    // 반환 타입을 명시한다. 없으면 분기마다 kind 리터럴이 좁혀져 합쳐지지 않는다.
+    // The return type is explicit; without it each branch narrows kind and they never merge.
     const items: Discrepancy[] = rooms.flatMap((room): Discrepancy[] => {
       const reservation = occupiedByReservation.get(room.number) ?? null;
 
-      // 재실 표시인데 재실 예약이 없다 — 체크아웃 처리가 누락됐을 가능성.
+      // Marked occupied with no in-house reservation — a check-out was likely missed.
       if (room.occupied && !reservation) {
         return [{ room, kind: 'OCCUPIED_WITHOUT_RESERVATION', reservation: null }];
       }
-      // 재실 예약이 있는데 객실은 비어 있다 — 체크인 시 배정이 어긋났을 가능성.
+      // An in-house reservation with an empty room — assignment likely went wrong at check-in.
       if (!room.occupied && reservation) {
         return [{ room, kind: 'RESERVATION_WITHOUT_OCCUPANCY', reservation }];
       }
-      // 재실인데 청소 완료로 표시 — 청소 상태가 잘못 올라갔을 가능성.
+      // Occupied but marked clean — the cleaning status was likely raised in error.
       if (room.occupied && room.status === RoomStatus.CLEAN) {
         return [{ room, kind: 'OCCUPIED_BUT_CLEAN', reservation }];
       }
@@ -328,7 +328,7 @@ export class HousekeepingService {
   }
 }
 
-/** 오늘(UTC). @db.Date 컬럼과 같은 기준을 쓴다. */
+/** Today in UTC, the same basis as @db.Date columns. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }

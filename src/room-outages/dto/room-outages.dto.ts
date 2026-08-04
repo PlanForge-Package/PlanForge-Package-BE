@@ -52,7 +52,7 @@ export class CreateRoomOutageDto {
   @Matches(DATE_ONLY, { message: 'endDate 는 YYYY-MM-DD 형식이어야 합니다.' })
   endDate!: string;
 
-  // 사유 없는 사용 불가는 나중에 아무도 해제하지 못한다.
+  // An outage with no reason is one nobody can release later.
   @ApiProperty({ description: '사유' })
   @IsString()
   @MinLength(1)

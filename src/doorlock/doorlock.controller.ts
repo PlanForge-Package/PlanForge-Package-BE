@@ -13,7 +13,7 @@ import { IssueKeyDto, RevokeKeyDto } from './dto/doorlock.dto';
 export class DoorLockController {
   constructor(private readonly doorLock: DoorLockService) {}
 
-  // 카드 발급은 프런트데스크의 일상 업무다.
+  // Issuing cards is the front desk's daily work.
   @Get('reservations/:id/keys')
   @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
   @ApiOperation({ summary: '이 예약에 발급된 카드 이력' })

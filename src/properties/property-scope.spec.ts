@@ -42,7 +42,7 @@ describe('resolvePropertyScope', () => {
       expect(() => resolvePropertyScope(userWith('prop-1'), 'prop-2')).toThrow(ForbiddenException);
     });
 
-    // 소속이 있으면 역할과 무관하게 고정된다. 지배인이라도 남의 호텔은 못 본다.
+    // With a property it is fixed regardless of role. Even a manager cannot see another hotel.
     it('MANAGER 여도 다른 호텔은 거절한다', () => {
       expect(() => resolvePropertyScope(userWith('prop-1', UserRole.MANAGER), 'prop-2')).toThrow(
         ForbiddenException,

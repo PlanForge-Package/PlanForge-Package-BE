@@ -46,12 +46,12 @@ describe('UsersService', () => {
       const data = prisma.user.create.mock.calls[0][0].data;
       expect(data.passwordHash).not.toBe('planforge');
       expect(await bcrypt.compare('planforge', data.passwordHash)).toBe(true);
-      // select 에 passwordHash 가 없어야 응답으로 새지 않는다.
+      // passwordHash must be absent from select so it cannot leak into a response.
       expect(prisma.user.create.mock.calls[0][0].select.passwordHash).toBeUndefined();
     });
 
-    // meta.target 은 Prisma 버전·드라이버에 따라 형태가 다르고, 아예 비는 경우도 있다.
-    // 실제로 6.19 는 "(not available)" 을 주어 필드명 매칭만으로는 놓쳤다.
+    // meta.target's shape varies by Prisma version and driver, and can be missing entirely.
+    // 6.19 actually gives "(not available)", which name matching alone would miss.
     it.each([
       ['필드 배열', { target: ['email'] }],
       ['인덱스 이름', { target: 'users_email_key' }],

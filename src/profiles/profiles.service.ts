@@ -8,19 +8,19 @@ import { PREFERENCE_CODES, type ListProfilesDto, type UpdateProfileDto } from '.
 
 const VALID_PREFERENCES = new Set<string>(PREFERENCE_CODES);
 
-/** 중복 후보를 찾은 근거. 화면이 "왜 같은 사람으로 보는가" 를 설명할 수 있어야 한다. */
+/** Why a duplicate was flagged. The screen must be able to explain the match. */
 export type DuplicateReason = 'SAME_EMAIL' | 'SAME_PHONE' | 'SAME_NAME' | 'SAME_MEMBERSHIP';
 
 /**
- * 게스트 프로필.
+ * Guest profiles.
  *
- * 프로필은 OPERA 에도 있다. 여기서 다루는 것은 **로컬 사본과 우리가 소유한
- * 부가 정보**다 — 선호 사항·내부 메모·중복 정리는 프론트의 운영 지식이고
- * OPERA 로 밀어 넣을 필드가 아니다.
+ * Profiles exist in OPERA too. What is handled here is the **local copy and the
+ * extra information we own** — preferences, internal notes and duplicate cleanup
+ * are front-desk operational knowledge, not fields to push into OPERA.
  *
- * 프로필에는 호텔 범위가 없다. 같은 손님이 여러 호텔에 묵기 때문이다. 대신
- * 투숙 이력은 요청자가 볼 수 있는 호텔로 좁힌다 — 소속 직원이 다른 호텔의
- * 투숙 기록까지 보면 그 자체로 사생활 노출이다.
+ * Profiles have no hotel scope, because one guest stays at several hotels. Stay
+ * history is narrowed to the hotels the requester may see — staff of one hotel
+ * reading another's stay records is a privacy exposure in itself.
  */
 @Injectable()
 export class ProfilesService {
@@ -31,7 +31,7 @@ export class ProfilesService {
     private readonly core: CoreClient,
   ) {}
 
-  /** 목록은 호텔로 좁히지 않는다 — 같은 손님이 여러 호텔에 묵기 때문이다. */
+  /** The list is not narrowed by hotel — one guest stays at several hotels. */
   async list(query: ListProfilesDto) {
     const { q, type, tier, vip, includeMerged, limit = 50, offset = 0 } = query;
 
@@ -39,7 +39,7 @@ export class ProfilesService {
       ...(type ? { type } : {}),
       ...(tier ? { membershipTier: tier } : {}),
       ...(vip === undefined ? {} : { vip }),
-      // 병합된 프로필은 정본이 아니다. 목록에 섞이면 어느 쪽에 적을지 헷갈린다.
+      // Merged profiles are not canonical. Mixed in, it is unclear which to write to.
       ...(includeMerged ? {} : { mergedIntoId: null }),
       ...(q ? { OR: searchClauses(q) } : {}),
     };
@@ -66,7 +66,7 @@ export class ProfilesService {
       throw new NotFoundException(`프로필을 찾을 수 없습니다: ${id}`);
     }
 
-    // 투숙 이력은 요청자가 볼 수 있는 호텔로만 좁힌다.
+    // Stay history is narrowed to the hotels the requester may see.
     const scopedPropertyId = resolvePropertyScope(user, undefined);
     const stays = await this.prisma.reservation.findMany({
       where: {
@@ -86,7 +86,7 @@ export class ProfilesService {
 
     return {
       ...profile,
-      /** 병합된 프로필이면 어디로 갔는지 알려 준다. 그냥 비어 보이면 오해한다. */
+      /** Where a merged profile went. Appearing simply empty would be misleading. */
       merged: Boolean(profile.mergedIntoId),
       stays,
       summary: {
@@ -101,7 +101,7 @@ export class ProfilesService {
   async update(id: string, dto: UpdateProfileDto): Promise<Profile> {
     const profile = await this.load(id);
 
-    // 병합된 프로필을 고치면 정본과 갈린다. 어느 쪽이 맞는지 알 수 없게 된다.
+    // Editing a merged profile splits it from the canonical one, with no way to tell which is right.
     if (profile.mergedIntoId) {
       throw new BadRequestException(
         '이미 다른 프로필로 병합된 프로필입니다. 정본 프로필에서 수정해 주세요.',
@@ -131,7 +131,7 @@ export class ProfilesService {
           ? {}
           : { membershipNumber: dto.membershipNumber.trim() || null }),
         ...(dto.membershipTier === undefined ? {} : { membershipTier: dto.membershipTier }),
-        // 중복은 걷어낸다. 같은 선호가 두 번 들어가면 배정 화면이 지저분해진다.
+        // Duplicates are stripped. The same preference twice clutters the assignment screen.
         ...(dto.preferences === undefined ? {} : { preferences: [...new Set(dto.preferences)] }),
         ...(dto.notes === undefined ? {} : { notes: dto.notes.trim() || null }),
       },
@@ -139,10 +139,10 @@ export class ProfilesService {
   }
 
   /**
-   * 중복 후보.
+   * Duplicate candidates.
    *
-   * 자동으로 합치지 않는다. 이름이 같은 다른 사람은 흔하고, 잘못 합치면 남의
-   * 투숙 이력과 선호가 섞인다. 근거를 붙여 보여 주고 판단은 사람이 한다.
+   * Nothing is merged automatically. Different people share names often, and a bad
+   * merge mixes stay history and preferences. Evidence is shown; a person decides.
    */
   async duplicates(id: string) {
     const profile = await this.load(id);
@@ -180,10 +180,10 @@ export class ProfilesService {
   }
 
   /**
-   * 병합.
+   * Merge.
    *
-   * 원본을 지우지 않는다. 과거 예약이 참조하고 있어 삭제하면 예약의 게스트가
-   * 사라진다. 예약을 정본으로 옮기고 원본에는 어디로 합쳐졌는지만 남긴다.
+   * The source is not deleted. Past reservations reference it and would lose their
+   * guest. Reservations move to the canonical profile; the source records where it went.
    */
   async merge(sourceId: string, targetId: string) {
     if (sourceId === targetId) {
@@ -202,10 +202,10 @@ export class ProfilesService {
     }
 
     /*
-     * 양쪽 다 OPERA 프로필이면 OPERA 에서 먼저 합친다.
+     * When both have OPERA profiles, OPERA merges first.
      *
-     * 로컬만 합쳐도 OPERA 에는 여전히 둘이고, 다음 동기화가 지운 쪽을 되살린다.
-     * OPERA 가 거절하면 로컬도 건드리지 않는다 — 한쪽만 합쳐진 상태가 가장 나쁘다.
+     * Merged locally only, OPERA still has two and the next sync revives the one we
+     * removed. If OPERA refuses, nothing local changes — a half-merge is the worst state.
      */
     if (source.operaProfileId && target.operaProfileId) {
       const log = await this.startLog(source.operaProfileId, {
@@ -228,7 +228,7 @@ export class ProfilesService {
         data: { profileId: targetId },
       });
 
-      // 비어 있는 칸만 채운다. 정본의 값을 덮어쓰면 사람이 고른 쪽이 사라진다.
+      // Only empty fields are filled. Overwriting the canonical value loses the chosen one.
       const merged = await tx.profile.update({
         where: { id: targetId },
         data: {
@@ -240,7 +240,7 @@ export class ProfilesService {
           nationality: target.nationality ?? source.nationality,
           membershipNumber: target.membershipNumber ?? source.membershipNumber,
           operaProfileId: target.operaProfileId ?? source.operaProfileId,
-          // VIP 는 한쪽이라도 VIP 면 VIP 다. 낮춰 잡으면 응대가 빠진다.
+          // VIP wins if either side is VIP. Downgrading drops the service that goes with it.
           vip: target.vip || source.vip,
           preferences: [...new Set([...target.preferences, ...source.preferences])],
           notes: joinNotes(target.notes, source.notes),
@@ -248,10 +248,10 @@ export class ProfilesService {
       });
 
       /*
-       * operaProfileId 는 고유 제약이 있다.
+       * operaProfileId has a unique constraint.
        *
-       * 정본에 없어서 옮겨 왔으면 원본에서 떼어 내야 다음 저장이 터지지 않는다.
-       * 양쪽 다 있었으면 OPERA 가 합쳤으므로 원본 ID 는 더 이상 유효하지 않다.
+       * Moved over because the canonical lacked one, it must be detached from the
+       * source. If both had one, OPERA merged them and the source id is no longer valid.
        */
       await tx.profile.update({
         where: { id: sourceId },
@@ -262,7 +262,7 @@ export class ProfilesService {
     });
   }
 
-  /** 쓰기는 이력을 남긴다. OPERA 호출이 실패했을 때 무엇을 보냈는지 알아야 한다. */
+  /** Writes are logged. A failed OPERA call needs to show what we sent. */
   private startLog(entityId: string | null, payload: unknown) {
     return this.prisma.syncLog.create({
       data: {
@@ -315,7 +315,7 @@ function searchClauses(q: string): Prisma.ProfileWhereInput[] {
     { firstName: { contains: term, mode: insensitive } },
     { companyName: { contains: term, mode: insensitive } },
     { email: { contains: term, mode: insensitive } },
-    // 전화는 하이픈·공백이 제각각이라 숫자만 남겨 비교한다.
+    // Phone numbers vary in hyphens and spaces, so only digits are compared.
     { phone: { contains: normalizePhone(term) ?? term } },
     { membershipNumber: { contains: term, mode: insensitive } },
   ];
@@ -343,7 +343,7 @@ function reasonsFor(a: Profile, b: Profile): DuplicateReason[] {
   return reasons;
 }
 
-/** 숫자만 남긴다. `010-1234-5678` 과 `01012345678` 이 다른 사람이 되면 안 된다. */
+/** Digits only. `010-1234-5678` and `01012345678` must not be different people. */
 function normalizePhone(phone: string): string | null {
   const digits = phone.replace(/\D/g, '');
   return digits || null;

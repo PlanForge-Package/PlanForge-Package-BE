@@ -101,7 +101,7 @@ export class CreateRatePlanDto {
   @Matches(DATE, { message: '판매 종료일은 YYYY-MM-DD 형식이어야 합니다.' })
   sellEndDate!: string;
 
-  /** 객실 타입 코드 → 금액. 여기 없는 객실 타입은 이 요금으로 팔지 않는다. */
+  /** Room type code to amount. Types absent here are not sold on this rate. */
   @ApiProperty({ example: { STDT: 190000, DLXK: 240000 } })
   @IsObject()
   baseAmounts!: Record<string, number>;
@@ -189,7 +189,7 @@ export class CreateSeasonDto {
   @Matches(DATE, { message: '종료일은 YYYY-MM-DD 형식이어야 합니다.' })
   endDate!: string;
 
-  /** 0=일요일. 비우면 기간 내 매일 적용한다. */
+  /** 0=Sunday. Empty applies every day in the range. */
   @ApiPropertyOptional({ type: [Number], example: [5, 6] })
   @IsOptional()
   @IsArray()

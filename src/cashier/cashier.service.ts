@@ -16,7 +16,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import type { CloseShiftDto, ListShiftsDto, OpenShiftDto } from './dto/cashier.dto';
 
-/** 마감 집계에 들어가는 결제 상태. 승인만 된 건은 아직 받은 돈이 아니다. */
+/** Payment states in the closing totals. An authorisation is not money received yet. */
 const SETTLED: PaymentStatus[] = [PaymentStatus.CAPTURED, PaymentStatus.REFUNDED];
 
 const SHIFT_INCLUDE = {
@@ -24,20 +24,20 @@ const SHIFT_INCLUDE = {
 } satisfies Prisma.CashierShiftInclude;
 
 /**
- * 캐셔 근무조 마감.
+ * Cashier shift close.
  *
- * 프런트는 교대로 돈을 받는다. 누가 얼마를 받았는지 조별로 끊어 두지 않으면
- * 현금이 맞지 않을 때 어느 시간대의 누구를 봐야 하는지 알 수 없다.
+ * The front desk takes money in shifts. Without recording who took how much per
+ * shift, a cash discrepancy leaves nobody to ask and no window to look at.
  *
- * 돈 자체는 이미 OPERA 폴리오에 올라가 있다. 여기서 다루는 것은 **금고에 얼마가
- * 있어야 하는가와 실제로 얼마가 있었는가**의 차이뿐이다. 근무 편성은 우리
- * 직원의 일이라 OPERA 에 보내지 않는다 — 하우스키핑 배정과 같은 이유다.
+ * The money itself is already on the OPERA folio. What is handled here is only the
+ * gap between **what should be in the drawer and what actually was**. Shifts are
+ * our own staff scheduling, so they do not go to OPERA — as with housekeeping.
  */
 @Injectable()
 export class CashierService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** 지금 열려 있는 내 근무조. 없으면 null 이다. */
+  /** My currently open shift, or null. */
   async current(user: AuthUser) {
     const shift = await this.prisma.cashierShift.findFirst({
       where: { userId: user.id, closedAt: null },
@@ -50,10 +50,10 @@ export class CashierService {
   }
 
   /**
-   * 근무조를 연다.
+   * Opens a shift.
    *
-   * 한 사람이 두 조를 동시에 열 수 없다. 열려 있으면 수납이 어느 조에 붙는지
-   * 정할 수 없고, 마감 금액이 두 조로 나뉜다.
+   * One person cannot hold two open shifts. With two, there is no telling which
+   * shift a receipt belongs to and the closing amount splits across both.
    */
   async open(dto: OpenShiftDto, user: AuthUser): Promise<CashierShift> {
     const propertyId = resolvePropertyScope(user, dto.propertyId);
@@ -85,11 +85,11 @@ export class CashierService {
   }
 
   /**
-   * 마감.
+   * Close.
    *
-   * 센 현금과 있어야 할 현금의 차이를 남긴다. 차이가 나도 마감을 막지 않는다 —
-   * 막으면 맞을 때까지 아무도 마감하지 않고, 다음 조의 수납이 이 조에 섞인다.
-   * 차이는 숨기지 말고 기록해서 다음 날 확인하게 하는 편이 낫다.
+   * Records the gap between counted and expected cash. A gap does not block the
+   * close — blocking it means nobody closes until it balances, and the next shift's
+   * receipts mix in. Better recorded openly and checked the next day.
    */
   async close(id: string, dto: CloseShiftDto, user: AuthUser) {
     const shift = await this.prisma.cashierShift.findUnique({
@@ -101,7 +101,7 @@ export class CashierService {
     }
     assertWithinScope(user, shift.propertyId);
 
-    // 남의 조를 마감하면 그 사람은 자기가 받은 돈을 확인할 기회를 잃는다.
+    // Closing someone else's shift denies them the chance to check what they took.
     if (shift.userId !== user.id) {
       throw new BadRequestException('자기 근무조만 마감할 수 있습니다.');
     }
@@ -122,7 +122,7 @@ export class CashierService {
     return { shift: closed, summary: await this.summarize(closed) };
   }
 
-  /** 지난 근무조. 차이가 났던 조를 되짚을 때 쓴다. */
+  /** Past shifts. Used to trace back a shift that came up short. */
   async list(query: ListShiftsDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, query.propertyId);
 
@@ -156,10 +156,10 @@ export class CashierService {
   // ---------------------------------------------------------------------------
 
   /**
-   * 조별 수납 집계.
+   * Receipts totalled per shift.
    *
-   * 환불은 받은 돈에서 빼고 센다. 환불한 만큼 금고에서 나갔기 때문이다.
-   * 승인만 된 카드는 넣지 않는다 — 매입 전에는 아직 우리 돈이 아니다.
+   * Refunds are subtracted from money received, since that much left the drawer.
+   * Authorised-only cards are excluded — before capture it is not our money yet.
    */
   private async summarize(shift: CashierShift) {
     const payments = await this.prisma.payment.findMany({
@@ -174,7 +174,7 @@ export class CashierService {
 
     const cash = byMethod[PaymentMethod.CASH];
     const openingFloat = shift.openingFloat;
-    /** 금고에 있어야 할 현금. 시작 시재에 이 조가 받은 현금을 더한 값이다. */
+    /** Cash that should be in the drawer: the opening float plus this shift's cash. */
     const expectedCash = openingFloat.add(cash);
     const countedCash = shift.countedCash;
 
@@ -188,7 +188,7 @@ export class CashierService {
       collected: byMethod.CASH.add(byMethod.CARD).add(byMethod.TRANSFER).toFixed(2),
       expectedCash: expectedCash.toFixed(2),
       countedCash: countedCash ? countedCash.toFixed(2) : null,
-      /** 센 것 − 있어야 할 것. 양수면 과잉, 음수면 부족이다. */
+      /** Counted minus expected. Positive is over, negative is short. */
       difference: countedCash ? countedCash.sub(expectedCash).toFixed(2) : null,
       paymentCount: payments.length,
     };
@@ -203,7 +203,7 @@ export class CashierService {
   }
 }
 
-/** 실제로 금고에 남은 금액. 환불한 만큼은 나갔다. */
+/** What actually remains in the drawer. Refunds have already left it. */
 function net(payment: Pick<Payment, 'amount' | 'refundedAmount'>): Prisma.Decimal {
   return payment.amount.sub(payment.refundedAmount);
 }

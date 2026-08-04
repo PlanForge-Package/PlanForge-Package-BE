@@ -288,7 +288,7 @@ describe('RoomOutagesService — 해제', () => {
       hotelId: 'SAND01',
       reason: undefined,
     });
-    // 청소 여부를 알 수 없으므로 CLEAN 이 아니라 DIRTY 로 돌아온다.
+    // Whether it was cleaned is unknown, so it returns DIRTY rather than CLEAN.
     expect(prisma.tx.room.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: RoomStatus.DIRTY } }),
     );

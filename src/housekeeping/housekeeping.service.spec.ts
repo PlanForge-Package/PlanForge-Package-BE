@@ -68,7 +68,7 @@ describe('room-status.mapper', () => {
     }
   });
 
-  // 판매 가능으로 잘못 올리는 것보다 청소 필요로 두는 편이 안전하다.
+  // Leaving it as needing cleaning is safer than wrongly putting it back on sale.
   it('모르는 값은 DIRTY 로 떨어뜨린다', () => {
     expect(fromOperaRoomStatus('SomethingNew')).toBe(RoomStatus.DIRTY);
   });
@@ -106,7 +106,7 @@ describe('HousekeepingService — 객실 상태', () => {
       '1101',
       expect.objectContaining({ hotelId: 'SAND01', status: 'Clean' }),
     );
-    // 우리가 보낸 CLEAN 이 아니라 OPERA 가 확정한 INSPECTED 가 저장돼야 한다.
+    // The stored value must be OPERA's confirmed INSPECTED, not the CLEAN we sent.
     expect(prisma.room.update.mock.calls[0][0].data.status).toBe(RoomStatus.INSPECTED);
   });
 
@@ -150,7 +150,7 @@ describe('HousekeepingService — 작업 조회', () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma, buildCore());
 
-    // 남의 ID 를 넣어도 무시된다.
+    // Another person's id is ignored.
     await service.listTasks({ assignedToId: 'someone-else' }, CLEANER);
 
     expect(prisma.housekeepingTask.findMany.mock.calls[0][0].where.assignedToId).toBe('hk-1');
@@ -223,7 +223,7 @@ describe('HousekeepingService — 배정·진행', () => {
     );
   });
 
-  // 다른 호텔 직원에게 배정하면 그 직원은 자기 화면에서 이 작업을 볼 수 없다.
+  // Assigned to another hotel's staff, that person never sees the task on their screen.
   it('다른 호텔 소속 직원에게는 배정하지 않는다', async () => {
     const prisma = taskIn();
     prisma.user.findUnique.mockResolvedValue({ id: 'x', active: true, propertyId: 'prop-2' });
@@ -243,7 +243,7 @@ describe('HousekeepingService — 배정·진행', () => {
     expect(prisma.housekeepingTask.update.mock.calls[0][0].data.assignedToId).toBeNull();
   });
 
-  // 남의 작업을 완료 처리하면 청소되지 않은 객실이 판매 가능으로 올라간다.
+  // Completing someone else's task puts a room that was never cleaned back on sale.
   it('하우스키핑은 남의 작업을 바꿀 수 없다', async () => {
     const prisma = taskIn('other-person');
     const service = await buildService(prisma, buildCore());

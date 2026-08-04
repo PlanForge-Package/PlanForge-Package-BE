@@ -4,10 +4,10 @@ import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class IssueKeyDto {
   /**
-   * 기본은 이전 카드를 죽이고 새로 만든다.
+   * By default the previous card is killed and a new one made.
    *
-   * 분실 재발급인데 이전 카드가 살아 있으면 재발급의 의미가 없다. 일행에게
-   * 카드를 하나 더 주는 경우에만 false 로 둔다.
+   * Reissuing after a loss is pointless if the old card is still alive. Set false
+   * only when handing an extra card to someone in the same party.
    */
   @ApiPropertyOptional({
     default: true,

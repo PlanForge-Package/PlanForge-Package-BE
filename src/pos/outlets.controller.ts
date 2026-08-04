@@ -13,7 +13,7 @@ import { OutletsService } from './outlets.service';
 export class OutletsController {
   constructor(private readonly outlets: OutletsService) {}
 
-  // 아웃렛 키는 요금을 달 수 있는 자격이다. 지배인 이상만 다룬다.
+  // An outlet key is the right to post charges. Managers and above only.
   @Get()
   @Roles(UserRole.MANAGER)
   @ApiOperation({ summary: 'POS 아웃렛 목록' })

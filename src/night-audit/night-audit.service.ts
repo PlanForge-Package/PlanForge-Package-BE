@@ -8,7 +8,7 @@ import { resolvePropertyScope } from '../properties/property-scope';
 import { BookingService } from '../reservations/booking.service';
 import { formatDateOnly, parseDateOnly } from '../sync/reservation.mapper';
 
-/** 마감을 막는 항목의 종류. 화면이 항목마다 다른 처리를 붙일 수 있어야 한다. */
+/** Kinds of item that block the close, so the screen can act on each differently. */
 export type AuditItemKind =
   | 'ARRIVAL_PENDING'
   | 'DEPARTURE_PENDING'
@@ -17,14 +17,14 @@ export type AuditItemKind =
   | 'ROOM_DISCREPANCY';
 
 /**
- * 야간 감사.
+ * Night audit.
  *
- * 마감 자체는 OPERA 가 돌린다 — 영업일을 넘기고 룸·세금을 자동 포스팅하는 것은
- * PMS 의 일이고, 우리가 흉내 내면 두 시스템의 매출이 갈린다. 여기서 하는 일은
- * "지금 마감하면 무엇이 잘못 남는가" 를 미리 보여 주는 것이다.
+ * OPERA runs the close itself — rolling the business date and auto-posting room and
+ * tax is the PMS's job, and imitating it would split the revenue between the two
+ * systems. What happens here is showing what would be left wrong by closing now.
  *
- * 실무에서 이 점검을 놓치면 노쇼가 재실로 남아 다음 날 재고를 먹고, 잔액이 남은
- * 폴리오가 마감되어 매출이 새고, 배정되지 않은 재실 예약이 청소 대상에서 빠진다.
+ * Skipping this check leaves no-shows in house eating the next day's inventory,
+ * folios with balances closed so revenue leaks, and in-house reservations with no room.
  */
 @Injectable()
 export class NightAuditService {
@@ -38,8 +38,8 @@ export class NightAuditService {
   async review(requestedPropertyId: string | undefined, user: AuthUser) {
     const property = await this.resolveProperty(requestedPropertyId, user);
 
-    // 영업일은 OPERA 가 원천이다. 닿지 않으면 달력 날짜로 대신하되 그 사실을
-    // 화면에 알린다 — 마감 판단을 잘못된 날짜로 조용히 내리면 안 된다.
+    // OPERA owns the business date. Out of reach, the calendar date stands in and the
+    // screen is told so — a close decision must never be made silently on the wrong date.
     let businessDate = new Date().toISOString().slice(0, 10);
     let businessDateFromOpera = false;
     try {
@@ -47,13 +47,13 @@ export class NightAuditService {
       businessDate = result.businessDate;
       businessDateFromOpera = true;
     } catch {
-      // 아래에서 businessDateFromOpera=false 로 알린다.
+      // Reported below as businessDateFromOpera=false.
     }
 
     const day = parseDateOnly(businessDate);
 
     const [arrivals, departures, unassigned, openFolios, discrepancies] = await Promise.all([
-      // 도착 예정인데 아직 안 들어온 예약 — 노쇼 후보.
+      // Due to arrive but not in yet — a no-show candidate.
       this.prisma.reservation.findMany({
         where: {
           propertyId: property.id,
@@ -63,7 +63,7 @@ export class NightAuditService {
         include: { profile: true, roomType: true },
         orderBy: { arrivalDate: 'asc' },
       }),
-      // 출발 예정인데 아직 나가지 않은 재실 — 체크아웃 누락.
+      // Due to depart but still in house — a missed check-out.
       this.prisma.reservation.findMany({
         where: {
           propertyId: property.id,
@@ -73,7 +73,7 @@ export class NightAuditService {
         include: { profile: true, roomType: true },
         orderBy: { departureDate: 'asc' },
       }),
-      // 재실인데 객실이 없다 — 청소 배정에서도 빠지고 위치도 알 수 없다.
+      // In house with no room — missing from cleaning assignment and untraceable.
       this.prisma.reservation.findMany({
         where: {
           propertyId: property.id,
@@ -82,7 +82,7 @@ export class NightAuditService {
         },
         include: { profile: true, roomType: true },
       }),
-      // 잔액이 남은 열린 폴리오 — 이대로 마감하면 매출이 샌다.
+      // Open folios with a balance — closing as is leaks revenue.
       this.prisma.folio.findMany({
         where: {
           status: FolioStatus.OPEN,
@@ -175,17 +175,17 @@ export class NightAuditService {
       businessDateFromOpera,
       calendarDate: new Date().toISOString().slice(0, 10),
       outstanding,
-      /** 남은 항목이 없으면 마감해도 안전하다는 뜻이다. 마감은 OPERA 에서 돌린다. */
+      /** No items left means closing is safe. The close itself runs in OPERA. */
       ready: outstanding === 0,
       sections,
     };
   }
 
   /**
-   * 노쇼 처리.
+   * No-show.
    *
-   * 도착일이 지났는지·이미 들어온 손님은 아닌지는 OPERA 가 판단한다. 여기서
-   * 따로 검사하면 두 곳의 규칙이 갈라진다.
+   * OPERA judges whether the arrival date has passed and whether the guest is
+   * already in. Checking here as well would split the rules across two places.
    */
   async markNoShow(reservationId: string, reason: string | undefined, user: AuthUser) {
     if (!reservationId) {
