@@ -257,6 +257,9 @@ cd deploy && docker compose up -d
 | `GET` `POST` | `/api/housekeeping/tasks` | 当日の作業・生成 |
 | `PATCH` | `/api/housekeeping/tasks/:id[/assign]` | 割当・進捗 |
 | `PATCH` | `/api/housekeeping/rooms/:id/status` | 客室ステータス（OPERA へ委譲） |
+| `GET` | `/api/room-outages` | 使用不可客室の一覧 |
+| `POST` | `/api/room-outages` | 使用不可の登録（OPERA へ委譲） |
+| `DELETE` | `/api/room-outages/:id` | 使用不可の解除（OPERA へ委譲） |
 | `GET` | `/api/housekeeping/discrepancies` | ステータスと在館の不一致 |
 | `GET` | `/api/night-audit` | 締めチェックリスト |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | ノーショー処理 |

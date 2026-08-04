@@ -17,6 +17,7 @@ import { ProfilesModule } from './profiles/profiles.module';
 import { PropertiesModule } from './properties/properties.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { RoomOutagesModule } from './room-outages/room-outages.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './users/users.module';
@@ -41,6 +42,7 @@ import { UsersModule } from './users/users.module';
     PropertiesModule,
     ReportsModule,
     ReservationsModule,
+    RoomOutagesModule,
     RoomsModule,
     SyncModule,
     UsersModule,

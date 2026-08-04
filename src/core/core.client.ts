@@ -10,12 +10,15 @@ import type {
   CoreBusinessDate,
   CoreCreateBlockInput,
   CoreCreateReservationInput,
+  CoreCreateRoomOutageInput,
   CoreProfile,
   CoreRateParams,
   CoreRateResponse,
   CoreReservation,
   CoreReservationListParams,
   CoreReservationListResponse,
+  CoreRoomOutage,
+  CoreRoomOutageListResponse,
   CoreRoomStatus,
   CoreUpdateBlockInput,
   CoreUpdateReservationInput,
@@ -120,6 +123,32 @@ export class CoreClient {
       `/v1/housekeeping/rooms/${encodeURIComponent(roomNumber)}/status`,
       undefined,
       { method: 'PUT', json: input },
+    );
+  }
+
+  listRoomOutages(params: {
+    hotelId?: string;
+    roomNumber?: string;
+    onDate?: string;
+  }): Promise<CoreRoomOutageListResponse> {
+    return this.request<CoreRoomOutageListResponse>('/v1/housekeeping/outages', { ...params });
+  }
+
+  createRoomOutage(input: CoreCreateRoomOutageInput): Promise<CoreRoomOutage> {
+    return this.request<CoreRoomOutage>('/v1/housekeeping/outages', undefined, {
+      method: 'POST',
+      json: input,
+    });
+  }
+
+  releaseRoomOutage(
+    outageId: string,
+    input: { hotelId?: string; reason?: string },
+  ): Promise<CoreRoomOutage> {
+    return this.request<CoreRoomOutage>(
+      `/v1/housekeeping/outages/${encodeURIComponent(outageId)}`,
+      undefined,
+      { method: 'DELETE', json: input },
     );
   }
 

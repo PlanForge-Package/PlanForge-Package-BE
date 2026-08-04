@@ -258,6 +258,9 @@ internal network with no published ports.
 | `GET` `POST` | `/api/housekeeping/tasks` | Daily tasks · generate |
 | `PATCH` | `/api/housekeeping/tasks/:id[/assign]` | Assign · progress |
 | `PATCH` | `/api/housekeeping/rooms/:id/status` | Room status (delegated to OPERA) |
+| `GET` | `/api/room-outages` | Out-of-order / out-of-service rooms |
+| `POST` | `/api/room-outages` | Take a room out (delegated to OPERA) |
+| `DELETE` | `/api/room-outages/:id` | Put it back on sale (delegated to OPERA) |
 | `GET` | `/api/housekeeping/discrepancies` | Status vs occupancy mismatches |
 | `GET` | `/api/night-audit` | Close-of-day checklist |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | Mark no-show |

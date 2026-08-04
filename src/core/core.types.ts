@@ -110,6 +110,34 @@ export interface CoreRoomStatus {
   occupied?: boolean;
 }
 
+/** 사용 불가 객실 기간. OutOfOrder 는 재고에서 빠지고 OutOfService 는 판매만 멈춘다. */
+export interface CoreRoomOutage {
+  outageId: string;
+  hotelId: string;
+  roomNumber: string;
+  roomType?: string;
+  kind: 'OutOfOrder' | 'OutOfService';
+  startDate: string;
+  endDate: string;
+  reason: string;
+  returnStatus: string;
+}
+
+export interface CoreRoomOutageListResponse {
+  hotelId: string;
+  items: CoreRoomOutage[];
+}
+
+export interface CoreCreateRoomOutageInput {
+  hotelId?: string;
+  roomNumber: string;
+  kind: 'OutOfOrder' | 'OutOfService';
+  startDate: string;
+  endDate: string;
+  reason: string;
+  returnStatus?: string;
+}
+
 export interface CoreCreateReservationInput {
   hotelId?: string;
   arrivalDate: string;

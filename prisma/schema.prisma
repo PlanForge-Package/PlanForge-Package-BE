@@ -47,6 +47,7 @@ model User {
   housekeepingTasks HousekeepingTask[]
   issuedRoomKeys    RoomKey[]
   payments          Payment[]
+  roomOutages       RoomOutage[]
 
   @@index([propertyId])
   @@map("users")
@@ -77,6 +78,7 @@ model Property {
   blocks            Block[]
   posOutlets        PosOutlet[]
   roomKeys          RoomKey[]
+  roomOutages       RoomOutage[]
 
   @@map("properties")
 }
@@ -124,10 +126,48 @@ model Room {
   roomType RoomType @relation(fields: [roomTypeId], references: [id])
 
   housekeepingTasks HousekeepingTask[]
+  outages           RoomOutage[]
 
   @@unique([propertyId, number])
   @@index([propertyId, status])
   @@map("rooms")
+}
+
+/// 객실을 판매에서 빼는 두 가지 방식. 실적 집계가 달라진다.
+enum RoomOutageKind {
+  /// 물리적으로 쓸 수 없다. 재고에서 빠지므로 점유율 분모도 줄어든다.
+  OUT_OF_ORDER
+  /// 팔지 않을 뿐 객실은 멀쩡하다. 재고에는 남아 점유율 분모는 그대로다.
+  OUT_OF_SERVICE
+}
+
+/// 사용 불가 객실 기간. OPERA 가 원천이고 여기 있는 것은 그 사본이다.
+model RoomOutage {
+  id           String         @id @default(cuid())
+  propertyId   String
+  roomId       String
+  /// OPERA 가 부여한 식별자. 해제할 때 이 값으로 지운다.
+  operaId      String         @unique
+  kind         RoomOutageKind
+  /// 사용 불가 시작일(포함)
+  startDate    DateTime       @db.Date
+  /// 사용 불가 종료일(포함). 이 날까지 팔 수 없다.
+  endDate      DateTime       @db.Date
+  reason       String
+  /// 기간이 끝나면 되돌릴 하우스키핑 상태
+  returnStatus RoomStatus     @default(DIRTY)
+  createdById  String?
+  releasedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  property  Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id])
+
+  @@index([propertyId, startDate, endDate])
+  @@index([roomId, releasedAt])
+  @@map("room_outages")
 }
 
 model RatePlan {

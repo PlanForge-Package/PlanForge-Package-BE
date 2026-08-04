@@ -38,17 +38,31 @@ function stay(
   };
 }
 
+function outage(roomId: string, startDate: string, endDate: string, releasedAt?: string) {
+  return {
+    roomId,
+    startDate: utc(startDate),
+    endDate: utc(endDate),
+    releasedAt: releasedAt ? utc(releasedAt) : null,
+  };
+}
+
 function buildPrisma(options: {
   rooms?: RoomStatus[];
   reservations?: ReturnType<typeof stay>[];
   postings?: Array<{ type: string; amount: Prisma.Decimal; postedAt: Date }>;
+  outages?: ReturnType<typeof outage>[];
 }) {
-  const rooms = (options.rooms ?? Array(10).fill(RoomStatus.CLEAN)).map((status) => ({ status }));
+  const rooms = (options.rooms ?? Array(10).fill(RoomStatus.CLEAN)).map((status, index) => ({
+    id: `room-${index + 1}`,
+    status,
+  }));
   return {
     property: { findUnique: jest.fn().mockResolvedValue(PROPERTY) },
     room: { findMany: jest.fn().mockResolvedValue(rooms) },
     reservation: { findMany: jest.fn().mockResolvedValue(options.reservations ?? []) },
     posting: { findMany: jest.fn().mockResolvedValue(options.postings ?? []) },
+    roomOutage: { findMany: jest.fn().mockResolvedValue(options.outages ?? []) },
   };
 }
 
@@ -73,17 +87,16 @@ describe('ReportsService — 점유율', () => {
     expect(sold).toEqual([1, 1, 0]);
   });
 
-  // 판매 불가 객실을 분모에 넣으면 점유율이 실제보다 낮게 나온다.
-  it('고장·판매중지 객실은 분모에서 뺀다', async () => {
+  // 고장(OOO) 객실은 재고에서 빠지므로 분모에서도 빠진다.
+  it('고장 기간인 객실은 그 날짜의 분모에서 뺀다', async () => {
     const service = await buildService(
       buildPrisma({
-        rooms: [
-          RoomStatus.CLEAN,
-          RoomStatus.CLEAN,
-          RoomStatus.OUT_OF_ORDER,
-          RoomStatus.OUT_OF_SERVICE,
-        ],
+        rooms: Array(4).fill(RoomStatus.CLEAN),
         reservations: [stay('2026-08-01', '2026-08-02', 100000)],
+        outages: [
+          outage('room-3', '2026-08-01', '2026-08-05'),
+          outage('room-4', '2026-08-01', '2026-08-05'),
+        ],
       }),
     );
 
@@ -91,8 +104,76 @@ describe('ReportsService — 점유율', () => {
       { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-01' },
       HQ,
     );
-    expect(result.roomsAvailable).toBe(2);
+    expect(result.rows[0]?.roomsAvailable).toBe(2);
     expect(result.rows[0]?.occupancy).toBe(0.5);
+  });
+
+  // 판매중지(OOS)는 재고에 남으므로 분모가 줄지 않는다. 이 차이가 두 구분을
+  // 나눠 둔 이유다 — 서비스는 OOO 기록만 읽는다.
+  it('판매중지는 분모를 줄이지 않는다', async () => {
+    const prisma = buildPrisma({
+      rooms: Array(4).fill(RoomStatus.CLEAN),
+      reservations: [stay('2026-08-01', '2026-08-02', 100000)],
+    });
+    const service = await buildService(prisma);
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-01' },
+      HQ,
+    );
+
+    expect(prisma.roomOutage.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ kind: 'OUT_OF_ORDER' }) }),
+    );
+    expect(result.rows[0]?.roomsAvailable).toBe(4);
+  });
+
+  // 기간이 끝나면 그날부터 다시 판 객실이다. 기간 밖 날짜까지 빼면 점유율이 부풀려진다.
+  it('고장 기간이 끝난 날짜는 다시 분모에 넣는다', async () => {
+    const service = await buildService(
+      buildPrisma({
+        rooms: Array(4).fill(RoomStatus.CLEAN),
+        outages: [outage('room-3', '2026-08-01', '2026-08-01')],
+      }),
+    );
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-02' },
+      HQ,
+    );
+    expect(result.rows.map((row) => row.roomsAvailable)).toEqual([3, 4]);
+  });
+
+  // 중간에 해제하면 그 뒤 날짜는 다시 팔 수 있었던 객실이다.
+  it('해제된 뒤 날짜는 분모에 되돌린다', async () => {
+    const service = await buildService(
+      buildPrisma({
+        rooms: Array(4).fill(RoomStatus.CLEAN),
+        outages: [outage('room-3', '2026-08-01', '2026-08-05', '2026-08-02')],
+      }),
+    );
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-03' },
+      HQ,
+    );
+    expect(result.rows.map((row) => row.roomsAvailable)).toEqual([3, 4, 4]);
+  });
+
+  // 날짜마다 분모가 다르므로 합계도 날짜별로 더한다. 하루치를 곱하면 어긋난다.
+  it('기간 합계 분모는 날짜별 값의 합이다', async () => {
+    const service = await buildService(
+      buildPrisma({
+        rooms: Array(4).fill(RoomStatus.CLEAN),
+        outages: [outage('room-3', '2026-08-01', '2026-08-01')],
+      }),
+    );
+
+    const result = await service.daily(
+      { propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-02' },
+      HQ,
+    );
+    expect(result.totals.roomsAvailable).toBe(7);
   });
 
   // 취소·노쇼가 점유율에 들어가면 팔지 않은 방을 판 것으로 집계된다.

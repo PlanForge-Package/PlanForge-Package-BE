@@ -254,6 +254,9 @@ cd deploy && docker compose up -d
 | `GET` `POST` | `/api/housekeeping/tasks` | 当班任务 · 生成 |
 | `PATCH` | `/api/housekeeping/tasks/:id[/assign]` | 分配 · 进度 |
 | `PATCH` | `/api/housekeeping/rooms/:id/status` | 房态变更（委托 OPERA） |
+| `GET` | `/api/room-outages` | 停用房间列表 |
+| `POST` | `/api/room-outages` | 登记停用（委托 OPERA） |
+| `DELETE` | `/api/room-outages/:id` | 解除停用（委托 OPERA） |
 | `GET` | `/api/housekeeping/discrepancies` | 房态与在住的差异 |
 | `GET` | `/api/night-audit` | 夜审检查表 |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | No-show 处理 |

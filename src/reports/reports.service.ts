@@ -1,5 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ReservationStatus, RoomStatus, type Property } from '@prisma/client';
+import {
+  Prisma,
+  ReservationStatus,
+  RoomOutageKind,
+  RoomStatus,
+  type Property,
+} from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
@@ -19,9 +25,6 @@ const MAX_DAYS = 92;
 const REALIZED: ReservationStatus[] = [ReservationStatus.IN_HOUSE, ReservationStatus.CHECKED_OUT];
 
 const BOOKED: ReservationStatus[] = [ReservationStatus.RESERVED, ReservationStatus.CONFIRMED];
-
-/** 판매할 수 없는 객실 상태. 분모에서 뺀다. */
-const UNSELLABLE: RoomStatus[] = [RoomStatus.OUT_OF_ORDER, RoomStatus.OUT_OF_SERVICE];
 
 export interface DailyRow {
   date: string;
@@ -60,10 +63,10 @@ export class ReportsService {
     const from = parseDateOnly(dates[0]!);
     const toExclusive = parseDateOnly(dates[dates.length - 1]!);
 
-    const [rooms, reservations, postings] = await Promise.all([
+    const [rooms, reservations, postings, outages] = await Promise.all([
       this.prisma.room.findMany({
         where: { propertyId: property.id },
-        select: { status: true },
+        select: { id: true, status: true },
       }),
       // 기간과 겹치는 예약만 읽는다. 도착이 기간 뒤이거나 출발이 기간 앞이면 무관하다.
       this.prisma.reservation.findMany({
@@ -90,17 +93,56 @@ export class ReportsService {
         },
         select: { type: true, amount: true, postedAt: true },
       }),
+      /*
+       * 분모에서 뺄 고장 객실.
+       *
+       * OutOfOrder 만 읽는다. OutOfService 는 팔지 않을 뿐 재고에는 남아 있어
+       * 분모가 줄지 않는다 — 그 차이가 두 구분을 나눠 둔 이유다.
+       */
+      this.prisma.roomOutage.findMany({
+        where: {
+          propertyId: property.id,
+          kind: RoomOutageKind.OUT_OF_ORDER,
+          startDate: { lte: toExclusive },
+          endDate: { gte: from },
+        },
+        select: { roomId: true, startDate: true, endDate: true, releasedAt: true },
+      }),
     ]);
 
     /**
-     * 분모는 현재 판매 가능한 객실 수다.
+     * 분모는 그 날짜에 팔 수 있었던 객실 수다.
      *
-     * 과거 날짜의 고장 이력은 남기지 않으므로 그 시점의 실제 가용 객실과는 다를 수
-     * 있다. 화면에 이 사실을 함께 표시한다 — 근거를 모르는 지표는 잘못 쓰인다.
+     * 기간 기록이 있으므로 지난 날짜도 그때의 가용 객실로 계산한다. 다만 기간
+     * 없이 상태만 고장으로 바꿔 둔 객실은 언제부터인지 알 수 없어, 오늘 이후
+     * 날짜에서만 뺀다.
      */
-    const roomsAvailable = rooms.filter((room) => !UNSELLABLE.includes(room.status)).length;
+    const today = formatDateOnly(new Date());
+    const statusOnlyBroken = rooms
+      .filter((room) => room.status === RoomStatus.OUT_OF_ORDER)
+      .map((room) => room.id);
+
+    const availableOn = (date: string): number => {
+      const broken = new Set<string>();
+      for (const outage of outages) {
+        const releasedOn = outage.releasedAt ? formatDateOnly(outage.releasedAt) : undefined;
+        const stillOut = !releasedOn || date < releasedOn;
+        if (
+          stillOut &&
+          formatDateOnly(outage.startDate) <= date &&
+          formatDateOnly(outage.endDate) >= date
+        ) {
+          broken.add(outage.roomId);
+        }
+      }
+      if (date >= today) {
+        for (const roomId of statusOnlyBroken) broken.add(roomId);
+      }
+      return Math.max(0, rooms.length - broken.size);
+    };
 
     const rows: DailyRow[] = dates.map((date) => {
+      const roomsAvailable = availableOn(date);
       const stays = reservations.filter((r) => coversNight(r, date));
       const sold = stays.filter((r) => REALIZED.includes(r.status));
       const booked = stays.filter((r) => BOOKED.includes(r.status));
@@ -126,7 +168,9 @@ export class ReportsService {
 
     const totalRevenue = rows.reduce((sum, row) => sum.add(row.roomRevenue), new Prisma.Decimal(0));
     const totalSold = rows.reduce((sum, row) => sum + row.roomsSold, 0);
-    const totalAvailable = roomsAvailable * rows.length;
+    // 날짜마다 가용 객실이 다르므로 합계도 날짜별 값을 더한다. 하루치를 곱하면
+    // 공사 기간이 들어간 구간에서 분모가 부풀어 점유율이 낮게 나온다.
+    const totalAvailable = rows.reduce((sum, row) => sum + row.roomsAvailable, 0);
 
     const charges = sumBy(postings, (p) => p.type === 'CHARGE' || p.type === 'TAX');
     const payments = sumBy(postings, (p) => p.type === 'PAYMENT');
@@ -138,9 +182,10 @@ export class ReportsService {
       from: dates[0],
       to: dates[dates.length - 1],
       nights: rows.length,
-      roomsAvailable,
+      roomsAvailable: availableOn(dates[dates.length - 1]!),
       /** 근거를 함께 내린다. 지표만 보면 분모가 무엇인지 알 수 없다. */
-      basis: '판매 가능 객실은 현재 고장·판매중지가 아닌 객실 수입니다.',
+      basis:
+        '판매 가능 객실은 전체 객실에서 그 날짜에 고장(OOO)인 객실을 뺀 수입니다. 판매중지(OOS)는 재고에 남아 분모에서 빠지지 않습니다.',
       totals: {
         roomsSold: totalSold,
         roomsAvailable: totalAvailable,

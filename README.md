@@ -256,6 +256,9 @@ cd deploy && docker compose up -d
 | `GET` `POST` | `/api/housekeeping/tasks` | 근무일 작업 · 생성 |
 | `PATCH` | `/api/housekeeping/tasks/:id[/assign]` | 배정 · 진행 상태 |
 | `PATCH` | `/api/housekeeping/rooms/:id/status` | 객실 상태 (OPERA 위임) |
+| `GET` | `/api/room-outages` | 사용 불가 객실 목록 |
+| `POST` | `/api/room-outages` | 사용 불가 등록 (OPERA 위임) |
+| `DELETE` | `/api/room-outages/:id` | 사용 불가 해제 (OPERA 위임) |
 | `GET` | `/api/housekeeping/discrepancies` | 객실 상태·재실 불일치 |
 | `GET` | `/api/night-audit` | 마감 점검표 |
 | `POST` | `/api/night-audit/reservations/:id/no-show` | 노쇼 처리 |
