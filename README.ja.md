@@ -222,6 +222,9 @@ cd deploy && docker compose up -d
 | `POST` | `/api/reservations/:id/check-out` | チェックアウト —— フォリオ締め・客室返却 |
 | `GET` `POST` | `/api/reservations/:id/folios` | フォリオ照会・ウィンドウ追加 |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | 請求・入金の登録 |
+| `POST` | `/api/reservations/:id/folios/postings/:postingId/transfer` | 取引を別ウィンドウへ移管 |
+| `GET` `POST` | `/api/reservations/:id/folios/routings` | ルーティング指示の照会・設定 |
+| `DELETE` | `/api/reservations/:id/folios/routings/:transactionCode` | ルーティング指示の解除 |
 | `GET` | `/api/reservations/:id/payments` | 決済履歴 |
 | `POST` | `/api/reservations/:id/folios/:window/payments` | オーソリ |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | 売上確定・オーソリ取消 |

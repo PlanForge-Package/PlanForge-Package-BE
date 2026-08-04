@@ -223,6 +223,9 @@ internal network with no published ports.
 | `POST` | `/api/reservations/:id/check-out` | Check out — close folio · release room |
 | `GET` `POST` | `/api/reservations/:id/folios` | Folios · open a window |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | Post a charge or payment |
+| `POST` | `/api/reservations/:id/folios/postings/:postingId/transfer` | Move a posting to another window |
+| `GET` `POST` | `/api/reservations/:id/folios/routings` | Read · set routing instructions |
+| `DELETE` | `/api/reservations/:id/folios/routings/:transactionCode` | Clear a routing instruction |
 | `GET` | `/api/reservations/:id/payments` | Payment history |
 | `POST` | `/api/reservations/:id/folios/:window/payments` | Authorize |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | Capture · void |

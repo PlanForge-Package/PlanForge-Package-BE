@@ -71,7 +71,7 @@ export class PosService {
       return { duplicate: true, ...this.toReceipt(existing, existing.folio) };
     }
 
-    const window = dto.window ?? 1;
+    const transactionCode = dto.transactionCode ?? outlet.transactionCode;
 
     return this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findFirst({
@@ -88,6 +88,24 @@ export class PosService {
           `재실 중인 예약이 없습니다: ${dto.roomNumber}호. 객실 번호를 확인해 주세요.`,
         );
       }
+
+      /*
+       * 창구는 라우팅 지시가 정한다.
+       *
+       * POS 단말은 이 예약의 정산 편성을 모른다. 회사가 객실료를, 손님이
+       * 부대비용을 내는 편성에서 단말이 보낸 창구를 그대로 믿으면 요금이
+       * 엉뚱한 쪽에 붙는다. 단말이 창구를 지정했으면 그건 존중한다 —
+       * 아무 지시도 없을 때만 1번으로 간다.
+       */
+      const routing = dto.window
+        ? null
+        : await tx.folioRouting.findUnique({
+            where: {
+              reservationId_transactionCode: { reservationId: reservation.id, transactionCode },
+            },
+            select: { targetWindow: true },
+          });
+      const window = dto.window ?? routing?.targetWindow ?? 1;
 
       const folio = await tx.folio.findUnique({
         where: { reservationId_window: { reservationId: reservation.id, window } },
@@ -110,7 +128,7 @@ export class PosService {
           data: {
             folioId: folio.id,
             type: PostingType.CHARGE,
-            transactionCode: dto.transactionCode ?? outlet.transactionCode,
+            transactionCode,
             description: `[${outlet.name}] ${dto.description}`,
             amount: new Prisma.Decimal(dto.amount),
             currency: folio.currency,

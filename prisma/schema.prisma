@@ -48,6 +48,8 @@ model User {
   issuedRoomKeys    RoomKey[]
   payments          Payment[]
   roomOutages       RoomOutage[]
+  folioRoutings     FolioRouting[]
+  transferredPostings Posting[]
 
   @@index([propertyId])
   @@map("users")
@@ -436,6 +438,7 @@ model Reservation {
   ratePlan RatePlan? @relation(fields: [ratePlanId], references: [id])
   folios   Folio[]
   roomKeys RoomKey[]
+  routings FolioRouting[]
 
   @@index([propertyId, arrivalDate])
   @@index([propertyId, status])
@@ -472,6 +475,35 @@ model Folio {
 
   @@unique([reservationId, window])
   @@map("folios")
+}
+
+/**
+ * 라우팅 지시 — 자동으로 붙는 요금을 어느 창구로 보낼지.
+ *
+ * 회사가 객실료를 내고 손님이 부대비용을 내는 편성이 흔하다. 요금이 붙을
+ * 때마다 사람이 옮기면 반드시 빠뜨리는 것이 생기므로, 거래 코드별로 목적지를
+ * 미리 정해 둔다.
+ *
+ * 프런트가 창구를 지정해 올리는 거래에는 적용하지 않는다 — 지정한 곳으로
+ * 가야 한다. 적용 대상은 외부 POS 룸차지처럼 창구를 모르는 채 들어오는
+ * 요금이다.
+ */
+model FolioRouting {
+  id              String   @id @default(cuid())
+  reservationId   String
+  /// OPERA transactionCode. 이 코드의 요금을 targetWindow 로 보낸다.
+  transactionCode String
+  targetWindow    Int
+  note            String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  createdBy   User?       @relation(fields: [createdById], references: [id])
+
+  @@unique([reservationId, transactionCode])
+  @@map("folio_routings")
 }
 
 /**
@@ -658,9 +690,15 @@ model Posting {
   /// 취소된 포스팅이면 그 취소를 만든 조정 포스팅. 원본은 지우지 않는다.
   voidedById String? @unique
 
-  folio   Folio      @relation(fields: [folioId], references: [id], onDelete: Cascade)
-  outlet  PosOutlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
-  payment Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  /// 다른 창구에서 옮겨 왔으면 원래 창구. 감사에서 "왜 여기 있나" 를 설명한다.
+  transferredFromWindow Int?
+  transferredAt         DateTime?
+  transferredById       String?
+
+  folio         Folio      @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  outlet        PosOutlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+  payment       Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  transferredBy User?      @relation(fields: [transferredById], references: [id])
 
   /// 이 포스팅을 취소한 조정. 값이 있으면 이미 취소된 것이다.
   voidedBy Posting? @relation("PostingVoid", fields: [voidedById], references: [id], onDelete: SetNull)

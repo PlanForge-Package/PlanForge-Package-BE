@@ -219,6 +219,9 @@ cd deploy && docker compose up -d
 | `POST` | `/api/reservations/:id/check-out` | 退房 —— 结账 · 释放房间 |
 | `GET` `POST` | `/api/reservations/:id/folios` | 账单查询 · 新增账窗 |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | 入账 |
+| `POST` | `/api/reservations/:id/folios/postings/:postingId/transfer` | 将账目转到其他账窗 |
+| `GET` `POST` | `/api/reservations/:id/folios/routings` | 查询 · 设置路由指令 |
+| `DELETE` | `/api/reservations/:id/folios/routings/:transactionCode` | 解除路由指令 |
 | `GET` | `/api/reservations/:id/payments` | 支付记录 |
 | `POST` | `/api/reservations/:id/folios/:window/payments` | 授权 |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | 请款 · 撤销授权 |

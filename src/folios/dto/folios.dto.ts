@@ -1,7 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PostingType } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreatePostingDto {
   @ApiProperty({ enum: PostingType, description: '거래 종류' })
@@ -34,6 +43,34 @@ export class CreatePostingDto {
   })
   @IsOptional()
   negative?: boolean;
+}
+
+export class TransferPostingDto {
+  @ApiProperty({ description: '옮길 대상 창구 (1~8)', minimum: 1, maximum: 8 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  toWindow!: number;
+}
+
+export class SetRoutingDto {
+  @ApiProperty({ description: 'OPERA transactionCode', example: '1000' })
+  @IsString()
+  transactionCode!: string;
+
+  @ApiProperty({ description: '이 코드의 요금을 보낼 창구 (1~8)', minimum: 1, maximum: 8 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  targetWindow!: number;
+
+  @ApiPropertyOptional({ description: '메모', example: '객실료는 회사 부담' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
 }
 
 export class OpenFolioDto {

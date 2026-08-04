@@ -43,6 +43,8 @@ function buildPrisma(overrides: Record<string, unknown> = {}) {
       update: jest.fn(),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: new Prisma.Decimal(45000) } }),
     },
+    // 라우팅 지시가 없으면 1번 창구로 간다.
+    folioRouting: { findUnique: jest.fn().mockResolvedValue(null) },
     ...(overrides.tx ?? {}),
   };
 
@@ -279,5 +281,44 @@ describe('PosService — 객실 목록', () => {
     expect(prisma.reservation.findMany.mock.calls[0][0].where).toEqual(
       expect.objectContaining({ propertyId: 'prop-1', status: 'IN_HOUSE' }),
     );
+  });
+});
+
+describe('PosService — 라우팅', () => {
+  /*
+   * POS 단말은 이 예약의 정산 편성을 모른다. 회사가 객실료를, 손님이 부대비용을
+   * 내는 편성에서 단말이 보낸 창구를 그대로 믿으면 요금이 엉뚱한 쪽에 붙는다.
+   */
+  it('지시가 있으면 그 창구로 단다', async () => {
+    const prisma = buildPrisma();
+    prisma.tx.folioRouting.findUnique.mockResolvedValue({ targetWindow: 2 });
+    const service = await buildService(prisma);
+
+    const result = await service.postCharge(OUTLET, CHARGE);
+
+    expect(prisma.tx.folio.findUnique).toHaveBeenCalledWith({
+      where: { reservationId_window: { reservationId: 'res-1', window: 2 } },
+    });
+    expect(result.window).toBe(2);
+  });
+
+  it('지시가 없으면 1번 창구로 단다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    const result = await service.postCharge(OUTLET, CHARGE);
+
+    expect(result.window).toBe(1);
+  });
+
+  // 단말이 창구를 지정했으면 그건 존중한다.
+  it('단말이 창구를 지정하면 지시를 보지 않는다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    const result = await service.postCharge(OUTLET, { ...CHARGE, window: 3 });
+
+    expect(prisma.tx.folioRouting.findUnique).not.toHaveBeenCalled();
+    expect(result.window).toBe(3);
   });
 });

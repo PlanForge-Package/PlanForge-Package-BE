@@ -1,10 +1,15 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { Roles } from '../auth/auth.constants';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { CreatePostingDto, OpenFolioDto } from './dto/folios.dto';
+import {
+  CreatePostingDto,
+  OpenFolioDto,
+  SetRoutingDto,
+  TransferPostingDto,
+} from './dto/folios.dto';
 import { FoliosService } from './folios.service';
 
 @ApiTags('folios')
@@ -40,5 +45,42 @@ export class FoliosController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.folios.addPosting(reservationId, window, dto, user);
+  }
+
+  @Post('postings/:postingId/transfer')
+  @ApiOperation({ summary: '거래를 다른 창구로 이관 — 양쪽 잔액을 다시 계산합니다' })
+  transfer(
+    @Param('reservationId') reservationId: string,
+    @Param('postingId') postingId: string,
+    @Body() dto: TransferPostingDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.folios.transferPosting(reservationId, postingId, dto, user);
+  }
+
+  @Get('routings')
+  @ApiOperation({ summary: '라우팅 지시 조회' })
+  listRoutings(@Param('reservationId') reservationId: string, @CurrentUser() user: AuthUser) {
+    return this.folios.listRoutings(reservationId, user);
+  }
+
+  @Post('routings')
+  @ApiOperation({ summary: '라우팅 지시 설정 — 거래 코드별 목적지 창구' })
+  setRouting(
+    @Param('reservationId') reservationId: string,
+    @Body() dto: SetRoutingDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.folios.setRouting(reservationId, dto, user);
+  }
+
+  @Delete('routings/:transactionCode')
+  @ApiOperation({ summary: '라우팅 지시 해제' })
+  removeRouting(
+    @Param('reservationId') reservationId: string,
+    @Param('transactionCode') transactionCode: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.folios.removeRouting(reservationId, transactionCode, user);
   }
 }

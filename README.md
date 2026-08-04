@@ -221,6 +221,9 @@ cd deploy && docker compose up -d
 | `POST` | `/api/reservations/:id/check-out` | 체크아웃 — 폴리오 마감 · 객실 반납 |
 | `GET` `POST` | `/api/reservations/:id/folios` | 폴리오 조회 · 윈도 추가 |
 | `POST` | `/api/reservations/:id/folios/:window/postings` | 청구·결제 등록 |
+| `POST` | `/api/reservations/:id/folios/postings/:postingId/transfer` | 거래를 다른 창구로 이관 |
+| `GET` `POST` | `/api/reservations/:id/folios/routings` | 라우팅 지시 조회 · 설정 |
+| `DELETE` | `/api/reservations/:id/folios/routings/:transactionCode` | 라우팅 해제 |
 | `GET` | `/api/reservations/:id/payments` | 결제 이력 |
 | `POST` | `/api/reservations/:id/folios/:window/payments` | 승인 |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | 매입 · 승인 취소 |
