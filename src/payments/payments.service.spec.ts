@@ -3,8 +3,15 @@ import { Test } from '@nestjs/testing';
 import { FolioStatus, PaymentMethod, PaymentStatus, Prisma, UserRole } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
+import { CoreClient } from '../core/core.client';
 import { PAYMENT_DRIVER, PaymentError } from './payment.driver';
 import { PaymentsService } from './payments.service';
+
+// 미러링은 folio-mirror.spec.ts 가 따로 본다. 여기서는 위임과 가드만 본다.
+jest.mock('../folios/folio-mirror', () => ({
+  ...jest.requireActual('../folios/folio-mirror'),
+  mirrorFolios: jest.fn().mockResolvedValue(undefined),
+}));
 
 const ACTOR: AuthUser = {
   id: 'u1',
@@ -45,19 +52,30 @@ function buildPrisma(overrides: Record<string, unknown> = {}) {
       update: jest.fn().mockImplementation(({ data }) => ({ ...payment(), ...data })),
     },
     posting: {
-      create: jest.fn(),
-      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: new Prisma.Decimal(0) } }),
+      findFirst: jest.fn().mockResolvedValue({ id: 'pst-1', paymentId: null }),
+      update: jest.fn(),
     },
-    folio: { update: jest.fn() },
   };
 
   return {
     tx,
-    reservation: { findUnique: jest.fn().mockResolvedValue({ propertyId: 'prop-1' }) },
+    reservation: {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'res-1',
+        propertyId: 'prop-1',
+        currency: 'KRW',
+        operaReservationId: 'RSV-1001',
+        property: { operaHotelId: 'SAND01' },
+      }),
+    },
     folio: {
-      findUnique: jest
-        .fn()
-        .mockResolvedValue({ id: 'fol-1', status: FolioStatus.OPEN, currency: 'KRW' }),
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'fol-1',
+        status: FolioStatus.OPEN,
+        currency: 'KRW',
+        reservationId: 'res-1',
+        window: 1,
+      }),
     },
     payment: {
       findUnique: jest.fn().mockResolvedValue(null),
@@ -67,6 +85,21 @@ function buildPrisma(overrides: Record<string, unknown> = {}) {
       ...(overrides.payment ?? {}),
     },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+  };
+}
+
+function buildCore(overrides: Record<string, unknown> = {}) {
+  return {
+    createPosting: jest.fn().mockResolvedValue({
+      folioId: 'FOL-801',
+      reservationId: 'RSV-1001',
+      window: 1,
+      status: 'Open',
+      balance: 0,
+      currencyCode: 'KRW',
+      postings: [],
+    }),
+    ...overrides,
   };
 }
 
@@ -88,11 +121,13 @@ function buildDriver() {
 async function buildService(
   prisma: ReturnType<typeof buildPrisma>,
   driver: ReturnType<typeof buildDriver> = buildDriver(),
+  core: ReturnType<typeof buildCore> = buildCore(),
 ) {
   const moduleRef = await Test.createTestingModule({
     providers: [
       PaymentsService,
       { provide: PrismaService, useValue: prisma },
+      { provide: CoreClient, useValue: core },
       { provide: PAYMENT_DRIVER, useValue: driver },
     ],
   }).compile();
@@ -103,7 +138,8 @@ describe('PaymentsService — 승인', () => {
   it('카드는 승인만 하고 폴리오는 건드리지 않는다', async () => {
     const prisma = buildPrisma();
     const driver = buildDriver();
-    const service = await buildService(prisma, driver);
+    const core = buildCore();
+    const service = await buildService(prisma, driver, core);
 
     const result = await service.authorize('res-1', 1, CARD, ACTOR);
 
@@ -112,7 +148,7 @@ describe('PaymentsService — 승인', () => {
     );
     expect(result.status).toBe(PaymentStatus.AUTHORIZED);
     // 승인만으로 잔액을 줄이면 매입에 실패했을 때 받지도 않은 돈이 받은 것으로 남는다.
-    expect(prisma.tx.posting.create).not.toHaveBeenCalled();
+    expect(core.createPosting).not.toHaveBeenCalled();
   });
 
   // 재전송되면 같은 카드로 두 번 긁힌다. 손님 돈이 두 번 나가는 일은 되돌리기 어렵다.
@@ -134,7 +170,8 @@ describe('PaymentsService — 승인', () => {
   it('현금은 곧바로 매입 상태로 폴리오에 올린다', async () => {
     const prisma = buildPrisma();
     const driver = buildDriver();
-    const service = await buildService(prisma, driver);
+    const core = buildCore();
+    const service = await buildService(prisma, driver, core);
 
     const result = await service.authorize(
       'res-1',
@@ -145,8 +182,8 @@ describe('PaymentsService — 승인', () => {
 
     expect(driver.authorize).not.toHaveBeenCalled();
     expect(result.status).toBe(PaymentStatus.CAPTURED);
-    // 결제는 음수로 올라간다. 폴리오 잔액이 곧 거래 합계이기 때문이다.
-    expect(prisma.tx.posting.create.mock.calls[0][0].data.amount.toString()).toBe('-340000');
+    // 부호는 OPERA 가 종류로 정한다. 우리는 양수로 보낸다.
+    expect(core.createPosting.mock.calls[0][2]).toMatchObject({ type: 'Payment', amount: 340000 });
   });
 
   it('카드인데 토큰이 없으면 거절한다', async () => {
@@ -210,13 +247,17 @@ describe('PaymentsService — 매입', () => {
   it('매입하면 폴리오에 결제가 올라간다', async () => {
     const prisma = buildPrisma({ payment: { findUnique: jest.fn().mockResolvedValue(payment()) } });
     const driver = buildDriver();
-    const service = await buildService(prisma, driver);
+    const core = buildCore();
+    const service = await buildService(prisma, driver, core);
 
     await service.capture('pay-1', {}, ACTOR);
 
     expect(driver.capture).toHaveBeenCalledWith('MOCKTXN-AAA', '340000.00');
-    expect(prisma.tx.posting.create.mock.calls[0][0].data.amount.toString()).toBe('-340000');
-    expect(prisma.tx.folio.update).toHaveBeenCalled();
+    expect(core.createPosting).toHaveBeenCalledWith(
+      'RSV-1001',
+      1,
+      expect.objectContaining({ type: 'Payment', amount: 340000 }),
+    );
   });
 
   it('부분 매입이 된다', async () => {
@@ -266,13 +307,14 @@ describe('PaymentsService — 승인 취소·환불', () => {
   it('승인 취소는 폴리오를 건드리지 않는다', async () => {
     const prisma = buildPrisma({ payment: { findUnique: jest.fn().mockResolvedValue(payment()) } });
     const driver = buildDriver();
-    const service = await buildService(prisma, driver);
+    const core = buildCore();
+    const service = await buildService(prisma, driver, core);
 
     const result = await service.void('pay-1', ACTOR);
 
     expect(driver.void).toHaveBeenCalledWith('MOCKTXN-AAA');
     expect(result.status).toBe(PaymentStatus.VOIDED);
-    expect(prisma.tx.posting.create).not.toHaveBeenCalled();
+    expect(core.createPosting).not.toHaveBeenCalled();
   });
 
   it('매입된 건은 승인 취소할 수 없다', async () => {
@@ -294,14 +336,15 @@ describe('PaymentsService — 승인 취소·환불', () => {
       },
     });
     const driver = buildDriver();
-    const service = await buildService(prisma, driver);
+    const core = buildCore();
+    const service = await buildService(prisma, driver, core);
 
     await service.refund('pay-1', { amount: 50000, reason: '요금 조정' }, ACTOR);
 
     expect(driver.refund).toHaveBeenCalledWith('MOCKTXN-AAA', '50000.00');
-    const posting = prisma.tx.posting.create.mock.calls[0][0].data;
-    // 결제가 음수이므로 환불은 양수다.
-    expect(posting.amount.toString()).toBe('50000');
+    const posting = core.createPosting.mock.calls[0][2];
+    // 결제가 음수로 올라가 있으므로 환불은 Adjustment 의 기본(양수) 방향이다.
+    expect(posting).toMatchObject({ type: 'Adjustment', amount: 50000 });
     expect(posting.description).toContain('[환불]');
   });
 
@@ -342,13 +385,14 @@ describe('PaymentsService — 승인 취소·환불', () => {
       },
     });
     const driver = buildDriver();
-    const service = await buildService(prisma, driver);
+    const core = buildCore();
+    const service = await buildService(prisma, driver, core);
 
     await service.refund('pay-1', { amount: 10000 }, ACTOR);
 
     expect(driver.refund).not.toHaveBeenCalled();
     // 기록은 그대로 맞춘다. 실제 돈은 프런트가 손으로 내준다.
-    expect(prisma.tx.posting.create.mock.calls[0][0].data.amount.toString()).toBe('10000');
+    expect(core.createPosting.mock.calls[0][2]).toMatchObject({ amount: 10000 });
   });
 
   it('PG 를 거치지 않은 결제는 승인 취소할 수 없다', async () => {

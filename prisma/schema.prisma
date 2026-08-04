@@ -666,6 +666,8 @@ enum PostingType {
 
 model Posting {
   id              String      @id @default(cuid())
+  /// OPERA postingId. 회계 원장의 원천은 OPERA 이고 이 행은 그 사본이다.
+  operaPostingId  String?     @unique
   folioId         String
   type            PostingType
   /// OPERA transactionCode

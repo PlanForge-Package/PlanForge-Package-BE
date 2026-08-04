@@ -6,15 +6,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  FolioStatus,
-  PaymentMethod,
-  PaymentStatus,
-  PostingType,
-  Prisma,
-  type Payment,
-} from '@prisma/client';
+import { FolioStatus, PaymentMethod, PaymentStatus, Prisma, type Payment } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
+import { CoreClient } from '../core/core.client';
+import type { CoreCreatePostingInput } from '../core/core.types';
+import { mirrorFolios } from '../folios/folio-mirror';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope } from '../properties/property-scope';
 import { PAYMENT_DRIVER, PaymentError, type PaymentDriver } from './payment.driver';
@@ -42,6 +38,7 @@ export class PaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly core: CoreClient,
     @Inject(PAYMENT_DRIVER) private readonly driver: PaymentDriver,
   ) {}
 
@@ -101,22 +98,20 @@ export class PaymentsService {
      * 받은 돈이 폴리오에 없다.
      */
     if (dto.method !== PaymentMethod.CARD) {
-      return this.prisma.$transaction(async (tx) => {
-        const payment = await tx.payment.create({
-          data: {
-            folioId: folio.id,
-            method: dto.method,
-            status: PaymentStatus.CAPTURED,
-            amount,
-            currency: folio.currency,
-            idempotencyKey: dto.idempotencyKey,
-            capturedAt: new Date(),
-            createdById: user.id,
-          },
-        });
-        await this.postPayment(tx, folio.id, payment, amount, dto.description);
-        return payment;
+      const payment = await this.prisma.payment.create({
+        data: {
+          folioId: folio.id,
+          method: dto.method,
+          status: PaymentStatus.CAPTURED,
+          amount,
+          currency: folio.currency,
+          idempotencyKey: dto.idempotencyKey,
+          capturedAt: new Date(),
+          createdById: user.id,
+        },
       });
+      await this.postPayment(reservationId, window, payment, amount, dto.description);
+      return payment;
     }
 
     if (!dto.paymentToken) {
@@ -205,14 +200,14 @@ export class PaymentsService {
       throw new BadRequestException(`매입하지 못했습니다: ${describe(error)}`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.CAPTURED, amount, capturedAt: new Date() },
-      });
-      await this.postPayment(tx, payment.folioId, updated, amount);
-      return updated;
+    const updated = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.CAPTURED, amount, capturedAt: new Date() },
     });
+
+    const folio = await this.folioOf(payment.folioId);
+    await this.postPayment(folio.reservationId, folio.window, updated, amount);
+    return updated;
   }
 
   /** 승인 취소. 매입 전에만 된다. */
@@ -278,63 +273,99 @@ export class PaymentsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const refunded = payment.refundedAmount.add(amount);
-      const updated = await tx.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.REFUNDED, refundedAmount: refunded },
-      });
-
-      await tx.posting.create({
-        data: {
-          folioId: payment.folioId,
-          type: PostingType.ADJUSTMENT,
-          transactionCode: PAYMENT_TRANSACTION_CODE,
-          description: `[환불] ${payment.maskedCard ?? payment.method}${dto.reason ? ` — ${dto.reason}` : ''}`,
-          // 결제는 음수로 올라가 있으므로 환불은 양수다.
-          amount,
-          currency: payment.currency,
-          paymentId: payment.id,
-        },
-      });
-
-      await this.recalculate(tx, payment.folioId);
-      return updated;
+    const refunded = payment.refundedAmount.add(amount);
+    const updated = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.REFUNDED, refundedAmount: refunded },
     });
+
+    const folio = await this.folioOf(payment.folioId);
+    await this.postToFolio(folio.reservationId, folio.window, payment.id, {
+      type: 'Adjustment',
+      transactionCode: PAYMENT_TRANSACTION_CODE,
+      description: `[환불] ${payment.maskedCard ?? payment.method}${dto.reason ? ` — ${dto.reason}` : ''}`,
+      // 결제는 음수로 올라가 있으므로 환불은 양수다. Adjustment 의 기본 방향이다.
+      amount: amount.toNumber(),
+      reference: `PAY-${payment.id}-R${refunded.toFixed(0)}`,
+    });
+
+    return updated;
   }
 
   // ---------------------------------------------------------------------------
 
   /** 결제는 음수로 올라간다. 폴리오 잔액이 곧 거래 합계이기 때문이다. */
   private async postPayment(
-    tx: Prisma.TransactionClient,
-    folioId: string,
+    reservationId: string,
+    window: number,
     payment: Payment,
     amount: Prisma.Decimal,
     description?: string,
   ): Promise<void> {
-    await tx.posting.create({
-      data: {
-        folioId,
-        type: PostingType.PAYMENT,
-        transactionCode: PAYMENT_TRANSACTION_CODE,
-        description:
-          description ??
-          `${payment.method} 결제${payment.maskedCard ? ` ${payment.maskedCard}` : ''}`,
-        amount: amount.negated(),
-        currency: payment.currency,
-        paymentId: payment.id,
-      },
+    await this.postToFolio(reservationId, window, payment.id, {
+      type: 'Payment',
+      transactionCode: PAYMENT_TRANSACTION_CODE,
+      description:
+        description ??
+        `${payment.method} 결제${payment.maskedCard ? ` ${payment.maskedCard}` : ''}`,
+      // 부호는 OPERA 가 종류로 정한다. 우리는 양수로 보낸다.
+      amount: amount.toNumber(),
+      reference: `PAY-${payment.id}`,
     });
-    await this.recalculate(tx, folioId);
   }
 
-  private async recalculate(tx: Prisma.TransactionClient, folioId: string): Promise<void> {
-    const totals = await tx.posting.aggregate({ where: { folioId }, _sum: { amount: true } });
-    await tx.folio.update({
-      where: { id: folioId },
-      data: { balance: totals._sum.amount ?? new Prisma.Decimal(0) },
+  /**
+   * 폴리오 반영은 OPERA 를 거친다.
+   *
+   * 로컬에만 적으면 OPERA 의 계산서에는 결제가 없고 우리 잔액만 줄어든다.
+   * 손님은 두 장의 다른 명세서를 받는다.
+   *
+   * 전표 번호에 결제 식별자를 넣어 재전송을 막는다 — 같은 결제가 두 번 올라가면
+   * 받지 않은 돈이 받은 것으로 남는다.
+   */
+  private async postToFolio(
+    reservationId: string,
+    window: number,
+    paymentId: string,
+    input: CoreCreatePostingInput,
+  ): Promise<void> {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { property: true },
     });
+    if (!reservation?.operaReservationId) {
+      throw new BadRequestException(
+        'OPERA 와 연결되지 않은 예약입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
+      );
+    }
+
+    const folio = await this.core.createPosting(reservation.operaReservationId, window, {
+      hotelId: reservation.property.operaHotelId,
+      ...input,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await mirrorFolios(tx, reservationId, reservation.currency, [folio]);
+
+      // 어느 결제가 만든 거래인지는 OPERA 가 모른다. 대사할 때 필요하다.
+      const posting = await tx.posting.findFirst({
+        where: { folio: { reservationId, window }, reference: input.reference },
+      });
+      if (posting && posting.paymentId !== paymentId) {
+        await tx.posting.update({ where: { id: posting.id }, data: { paymentId } });
+      }
+    });
+  }
+
+  private async folioOf(folioId: string): Promise<{ reservationId: string; window: number }> {
+    const folio = await this.prisma.folio.findUnique({
+      where: { id: folioId },
+      select: { reservationId: true, window: true },
+    });
+    if (!folio) {
+      throw new NotFoundException(`폴리오를 찾을 수 없습니다: ${folioId}`);
+    }
+    return folio;
   }
 
   private async load(paymentId: string, user: AuthUser): Promise<Payment> {

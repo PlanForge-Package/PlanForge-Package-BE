@@ -110,6 +110,50 @@ export interface CoreRoomStatus {
   occupied?: boolean;
 }
 
+/** OPERA 표기의 거래 종류. 부호는 종류가 정한다. */
+export type CorePostingType = 'Charge' | 'Payment' | 'Adjustment' | 'Tax';
+
+export interface CorePosting {
+  postingId: string;
+  type: CorePostingType;
+  transactionCode: string;
+  description: string;
+  /** 부호가 붙은 값. 청구는 양수, 결제는 음수다. */
+  amount: number;
+  currencyCode: string;
+  postedAt: string;
+  reference?: string;
+  voidedById?: string;
+  transferredFromWindow?: number;
+}
+
+/** OPERA 가 확정한 폴리오. 잔액은 저쪽이 계산한 값이다. */
+export interface CoreFolio {
+  folioId: string;
+  reservationId: string;
+  window: number;
+  status: 'Open' | 'Closed';
+  balance: number;
+  currencyCode: string;
+  postings: CorePosting[];
+}
+
+export interface CoreFolioListResponse {
+  reservationId: string;
+  folios: CoreFolio[];
+}
+
+export interface CoreCreatePostingInput {
+  hotelId?: string;
+  type: CorePostingType;
+  transactionCode: string;
+  description: string;
+  /** 항상 양수로 보낸다. 잔액 방향은 type 이 정한다. */
+  amount: number;
+  negative?: boolean;
+  reference?: string;
+}
+
 /** 사용 불가 객실 기간. OutOfOrder 는 재고에서 빠지고 OutOfService 는 판매만 멈춘다. */
 export interface CoreRoomOutage {
   outageId: string;

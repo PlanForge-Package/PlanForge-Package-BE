@@ -1,51 +1,17 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FolioStatus, PostingType, Prisma, UserRole } from '@prisma/client';
+import { FolioStatus, PostingType, UserRole } from '@prisma/client';
+import { CoreClient } from '../core/core.client';
+import type { CoreFolio } from '../core/core.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { FoliosService } from './folios.service';
 
-function buildTx() {
-  return {
-    reservation: { findUnique: jest.fn() },
-    folio: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
-    posting: {
-      create: jest.fn(),
-      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: new Prisma.Decimal(0) } }),
-      findUnique: jest.fn(),
-      findFirst: jest.fn().mockResolvedValue(null),
-      update: jest.fn(),
-    },
-    folioRouting: { findUnique: jest.fn() },
-  };
-}
+// 미러링은 folio-mirror.spec.ts 가 따로 본다. 여기서는 위임과 가드만 본다.
+jest.mock('./folio-mirror', () => ({
+  ...jest.requireActual('./folio-mirror'),
+  mirrorFolios: jest.fn().mockResolvedValue(undefined),
+}));
 
-function buildPrisma(tx: ReturnType<typeof buildTx>, overrides: Record<string, unknown> = {}) {
-  return {
-    $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
-    // assertReservationInScope 가 트랜잭션 밖에서 예약의 호텔을 먼저 확인한다.
-    reservation: { findUnique: jest.fn().mockResolvedValue({ propertyId: 'prop-1' }) },
-    folio: { findUnique: jest.fn() },
-    folioRouting: {
-      findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn().mockImplementation(({ create }) => ({ id: 'route-1', ...create })),
-      delete: jest.fn(),
-    },
-    ...overrides,
-  };
-}
-
-async function buildService(
-  tx: ReturnType<typeof buildTx>,
-  prisma: ReturnType<typeof buildPrisma> = buildPrisma(tx),
-) {
-  const moduleRef = await Test.createTestingModule({
-    providers: [FoliosService, { provide: PrismaService, useValue: prisma }],
-  }).compile();
-  return moduleRef.get(FoliosService);
-}
-
-/** 소속이 없는 계정. 호텔 범위 검사는 property-scope.spec.ts 가 따로 다룬다. */
 const ACTOR = {
   id: 'actor-1',
   sub: 'actor-1',
@@ -55,418 +21,296 @@ const ACTOR = {
   propertyId: null,
 } as const;
 
-const OPEN_FOLIO = {
-  id: 'folio-1',
-  reservationId: 'res-1',
-  window: 1,
-  status: FolioStatus.OPEN,
+const RESERVATION = {
+  id: 'res-1',
+  propertyId: 'prop-1',
   currency: 'KRW',
+  operaReservationId: 'RSV-1001',
+  property: { operaHotelId: 'SAND01' },
 };
 
-/** addPosting 이 저장한 amount 를 꺼낸다. */
-function savedAmount(tx: ReturnType<typeof buildTx>): Prisma.Decimal {
-  return tx.posting.create.mock.calls[0][0].data.amount;
+function coreFolio(window = 1): CoreFolio {
+  return {
+    folioId: `FOL-80${window}`,
+    reservationId: 'RSV-1001',
+    window,
+    status: 'Open',
+    balance: 0,
+    currencyCode: 'KRW',
+    postings: [],
+  };
 }
 
-describe('FoliosService', () => {
-  describe('addPosting — 금액 부호', () => {
-    it.each([
-      [PostingType.CHARGE, '240000'],
-      [PostingType.TAX, '24000'],
-    ])('%s 는 양수로 저장한다', async (type, expected) => {
-      const tx = buildTx();
-      tx.folio.findUnique.mockResolvedValue(OPEN_FOLIO);
-      tx.posting.aggregate.mockResolvedValue({ _sum: { amount: new Prisma.Decimal(expected) } });
-      tx.folio.update.mockResolvedValue(OPEN_FOLIO);
+function buildPrisma(overrides: Record<string, unknown> = {}) {
+  const tx = { folio: {}, posting: {} };
+  return {
+    tx,
+    reservation: {
+      findUnique: jest.fn().mockResolvedValue(RESERVATION),
+      ...((overrides.reservation as object) ?? {}),
+    },
+    folio: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'folio-1', window: 1 }),
+      findMany: jest.fn().mockResolvedValue([]),
+      ...((overrides.folio as object) ?? {}),
+    },
+    posting: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      ...((overrides.posting as object) ?? {}),
+    },
+    folioRouting: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockImplementation(({ create }) => ({ id: 'route-1', ...create })),
+      delete: jest.fn(),
+      ...((overrides.folioRouting as object) ?? {}),
+    },
+    syncLog: {
+      create: jest.fn().mockResolvedValue({ id: 'log-1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
+  };
+}
 
-      const service = await buildService(tx);
-      await service.addPosting(
-        'res-1',
-        1,
-        {
-          type,
-          transactionCode: '1000',
-          description: 'x',
-          amount: Number(expected),
-        },
-        ACTOR,
-      );
+function buildCore(overrides: Record<string, unknown> = {}) {
+  return {
+    openFolio: jest.fn().mockResolvedValue(coreFolio(2)),
+    createPosting: jest.fn().mockResolvedValue(coreFolio(1)),
+    transferPosting: jest
+      .fn()
+      .mockResolvedValue({ reservationId: 'RSV-1001', folios: [coreFolio(1), coreFolio(2)] }),
+    ...overrides,
+  };
+}
 
-      expect(savedAmount(tx).toString()).toBe(expected);
-    });
+async function buildService(
+  prisma: ReturnType<typeof buildPrisma>,
+  core: ReturnType<typeof buildCore> = buildCore(),
+) {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      FoliosService,
+      { provide: PrismaService, useValue: prisma },
+      { provide: CoreClient, useValue: core },
+    ],
+  }).compile();
+  return moduleRef.get(FoliosService);
+}
 
-    it('PAYMENT 는 양수로 받아 차감 방향으로 저장한다', async () => {
-      const tx = buildTx();
-      tx.folio.findUnique.mockResolvedValue(OPEN_FOLIO);
-      tx.posting.aggregate.mockResolvedValue({ _sum: { amount: new Prisma.Decimal(0) } });
-      tx.folio.update.mockResolvedValue(OPEN_FOLIO);
+const CHARGE = {
+  type: PostingType.CHARGE,
+  transactionCode: '1000',
+  description: '객실료',
+  amount: 240000,
+};
 
-      const service = await buildService(tx);
-      await service.addPosting(
-        'res-1',
-        1,
-        {
-          type: PostingType.PAYMENT,
-          transactionCode: '5000',
-          description: '카드 결제',
-          amount: 340000,
-        },
-        ACTOR,
-      );
+describe('FoliosService — 위임', () => {
+  it('창구 개설을 OPERA 에 맡긴다', async () => {
+    const prisma = buildPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
 
-      expect(savedAmount(tx).toString()).toBe('-340000');
-    });
+    await service.openWindow('res-1', { window: 2 }, ACTOR);
 
-    it('ADJUSTMENT 는 negative 로 차감 방향을 고를 수 있다', async () => {
-      const tx = buildTx();
-      tx.folio.findUnique.mockResolvedValue(OPEN_FOLIO);
-      tx.posting.aggregate.mockResolvedValue({ _sum: { amount: new Prisma.Decimal(0) } });
-      tx.folio.update.mockResolvedValue(OPEN_FOLIO);
-
-      const service = await buildService(tx);
-      await service.addPosting(
-        'res-1',
-        1,
-        {
-          type: PostingType.ADJUSTMENT,
-          transactionCode: '7000',
-          description: '할인',
-          amount: 10000,
-          negative: true,
-        },
-        ACTOR,
-      );
-
-      expect(savedAmount(tx).toString()).toBe('-10000');
-    });
-  });
-
-  describe('addPosting — 잔액', () => {
-    it('증분이 아니라 거래 합계로 잔액을 다시 계산한다', async () => {
-      const tx = buildTx();
-      tx.folio.findUnique.mockResolvedValue({ ...OPEN_FOLIO, balance: new Prisma.Decimal(999) });
-      tx.posting.aggregate.mockResolvedValue({ _sum: { amount: new Prisma.Decimal('264000') } });
-      tx.folio.update.mockResolvedValue(OPEN_FOLIO);
-
-      const service = await buildService(tx);
-      await service.addPosting(
-        'res-1',
-        1,
-        {
-          type: PostingType.CHARGE,
-          transactionCode: '1000',
-          description: '객실료',
-          amount: 240000,
-        },
-        ACTOR,
-      );
-
-      const updated = tx.folio.update.mock.calls[0][0];
-      expect(updated.data.balance.toString()).toBe('264000');
-    });
-
-    it('거래가 하나도 없으면 잔액은 0 이다', async () => {
-      const tx = buildTx();
-      tx.folio.findUnique.mockResolvedValue(OPEN_FOLIO);
-      tx.posting.aggregate.mockResolvedValue({ _sum: { amount: null } });
-      tx.folio.update.mockResolvedValue(OPEN_FOLIO);
-
-      const service = await buildService(tx);
-      await service.addPosting(
-        'res-1',
-        1,
-        {
-          type: PostingType.CHARGE,
-          transactionCode: '1000',
-          description: 'x',
-          amount: 1,
-        },
-        ACTOR,
-      );
-
-      expect(tx.folio.update.mock.calls[0][0].data.balance.toString()).toBe('0');
-    });
-  });
-
-  describe('addPosting — 거절', () => {
-    it('마감된 폴리오에는 등록하지 않는다', async () => {
-      const tx = buildTx();
-      tx.folio.findUnique.mockResolvedValue({ ...OPEN_FOLIO, status: FolioStatus.CLOSED });
-
-      const service = await buildService(tx);
-      await expect(
-        service.addPosting(
-          'res-1',
-          1,
-          {
-            type: PostingType.CHARGE,
-            transactionCode: '1000',
-            description: 'x',
-            amount: 1,
-          },
-          ACTOR,
-        ),
-      ).rejects.toThrow(/마감된 폴리오/);
-      expect(tx.posting.create).not.toHaveBeenCalled();
-    });
-
-    it('없는 폴리오면 404 를 낸다', async () => {
-      const tx = buildTx();
-      tx.folio.findUnique.mockResolvedValue(null);
-
-      const service = await buildService(tx);
-      await expect(
-        service.addPosting(
-          'res-1',
-          3,
-          {
-            type: PostingType.CHARGE,
-            transactionCode: '1000',
-            description: 'x',
-            amount: 1,
-          },
-          ACTOR,
-        ),
-      ).rejects.toBeInstanceOf(NotFoundException);
-    });
-  });
-
-  describe('openWindow', () => {
-    it('번호를 생략하면 비어 있는 다음 번호를 쓴다', async () => {
-      const tx = buildTx();
-      tx.reservation.findUnique.mockResolvedValue({ id: 'res-1', currency: 'KRW' });
-      tx.folio.findMany.mockResolvedValue([{ window: 1 }, { window: 2 }]);
-      tx.folio.create.mockResolvedValue({ window: 3 });
-
-      const service = await buildService(tx);
-      await service.openWindow('res-1', {}, ACTOR);
-
-      expect(tx.folio.create).toHaveBeenCalledWith({
-        data: { reservationId: 'res-1', window: 3, currency: 'KRW' },
-      });
-    });
-
-    it('이미 열린 번호는 거절한다', async () => {
-      const tx = buildTx();
-      tx.reservation.findUnique.mockResolvedValue({ id: 'res-1', currency: 'KRW' });
-      tx.folio.findMany.mockResolvedValue([{ window: 1 }]);
-
-      const service = await buildService(tx);
-      await expect(service.openWindow('res-1', { window: 1 }, ACTOR)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-    });
-
-    it('윈도를 8개 넘게 열지 않는다', async () => {
-      const tx = buildTx();
-      tx.reservation.findUnique.mockResolvedValue({ id: 'res-1', currency: 'KRW' });
-      tx.folio.findMany.mockResolvedValue(Array.from({ length: 8 }, (_, i) => ({ window: i + 1 })));
-
-      const service = await buildService(tx);
-      await expect(service.openWindow('res-1', {}, ACTOR)).rejects.toThrow(/8개까지만/);
-    });
-
-    it('없는 예약이면 404 를 낸다', async () => {
-      const tx = buildTx();
-      tx.reservation.findUnique.mockResolvedValue(null);
-
-      const service = await buildService(tx);
-      await expect(service.openWindow('nope', {}, ACTOR)).rejects.toBeInstanceOf(NotFoundException);
-    });
-  });
-  describe('transferPosting', () => {
-    const TARGET_FOLIO = {
-      id: 'folio-2',
-      reservationId: 'res-1',
+    expect(core.openFolio).toHaveBeenCalledWith('RSV-1001', {
+      hotelId: 'SAND01',
       window: 2,
-      status: FolioStatus.OPEN,
-      currency: 'KRW',
-    };
-
-    function posting(overrides: Record<string, unknown> = {}) {
-      return {
-        id: 'post-1',
-        folioId: 'folio-1',
-        paymentId: null,
-        voidedById: null,
-        folio: OPEN_FOLIO,
-        ...overrides,
-      };
-    }
-
-    it('거래를 옮기고 양쪽 잔액을 다시 계산한다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting());
-      tx.folio.findUnique.mockResolvedValue(TARGET_FOLIO);
-      tx.folio.findMany.mockResolvedValue([]);
-
-      const service = await buildService(tx);
-      await service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR);
-
-      expect(tx.posting.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'post-1' },
-          data: expect.objectContaining({ folioId: 'folio-2', transferredFromWindow: 1 }),
-        }),
-      );
-      // 한쪽만 고치면 합계가 맞지 않는다.
-      const updatedFolios = tx.folio.update.mock.calls.map((call) => call[0].where.id);
-      expect(updatedFolios).toEqual(['folio-1', 'folio-2']);
-    });
-
-    it('누가 언제 옮겼는지 남긴다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting());
-      tx.folio.findUnique.mockResolvedValue(TARGET_FOLIO);
-      tx.folio.findMany.mockResolvedValue([]);
-
-      const service = await buildService(tx);
-      await service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR);
-
-      const data = tx.posting.update.mock.calls[0][0].data;
-      expect(data.transferredById).toBe('actor-1');
-      expect(data.transferredAt).toBeInstanceOf(Date);
-    });
-
-    it('같은 창구로는 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting());
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 1 }, ACTOR),
-      ).rejects.toThrow(/이미 윈도 1/);
-    });
-
-    // 원본과 조정이 갈라지면 양쪽 잔액이 모두 틀어진다.
-    it('취소된 거래는 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting({ voidedById: 'post-9' }));
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-      ).rejects.toThrow(/취소된 거래/);
-    });
-
-    it('취소 조정도 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting());
-      tx.posting.findFirst.mockResolvedValue({ id: 'post-0' });
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-      ).rejects.toThrow(/취소 조정/);
-    });
-
-    // 결제는 폴리오를 가리키고 있어, 포스팅만 옮기면 환불이 어느 쪽을 되돌릴지 모른다.
-    it('결제로 생긴 거래는 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting({ paymentId: 'pay-1' }));
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-      ).rejects.toThrow(/결제로 생긴 거래/);
-    });
-
-    it('마감된 폴리오에서는 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(
-        posting({ folio: { ...OPEN_FOLIO, status: FolioStatus.CLOSED } }),
-      );
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-      ).rejects.toThrow(/마감된 폴리오/);
-    });
-
-    it('마감된 창구로는 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting());
-      tx.folio.findUnique.mockResolvedValue({ ...TARGET_FOLIO, status: FolioStatus.CLOSED });
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-      ).rejects.toThrow(/이미 마감/);
-    });
-
-    it('열려 있지 않은 창구로는 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(posting());
-      tx.folio.findUnique.mockResolvedValue(null);
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-      ).rejects.toThrow(/열려 있지 않습니다/);
-    });
-
-    it('다른 예약의 거래는 옮기지 않는다', async () => {
-      const tx = buildTx();
-      tx.posting.findUnique.mockResolvedValue(
-        posting({ folio: { ...OPEN_FOLIO, reservationId: 'res-9' } }),
-      );
-
-      const service = await buildService(tx);
-      await expect(
-        service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
-  describe('라우팅 지시', () => {
-    it('거래 코드별 목적지를 저장한다', async () => {
-      const tx = buildTx();
-      const prisma = buildPrisma(tx);
-      prisma.folio.findUnique.mockResolvedValue({ id: 'folio-2', window: 2 });
+  it('거래 등록을 OPERA 에 맡기고 종류를 저쪽 표기로 보낸다', async () => {
+    const prisma = buildPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
 
-      const service = await buildService(tx, prisma);
-      await service.setRouting('res-1', { transactionCode: '1000', targetWindow: 2 }, ACTOR);
+    await service.addPosting('res-1', 1, CHARGE, ACTOR);
 
-      expect(prisma.folioRouting.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            reservationId_transactionCode: { reservationId: 'res-1', transactionCode: '1000' },
-          },
-        }),
-      );
+    expect(core.createPosting).toHaveBeenCalledWith(
+      'RSV-1001',
+      1,
+      expect.objectContaining({ type: 'Charge', amount: 240000, hotelId: 'SAND01' }),
+    );
+  });
+
+  // 부호를 호출자가 정하면 결제를 양수로 보내 잔액이 늘어나는 사고가 난다.
+  it('조정의 차감 방향만 따로 넘긴다', async () => {
+    const prisma = buildPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.addPosting(
+      'res-1',
+      1,
+      { ...CHARGE, type: PostingType.ADJUSTMENT, negative: true },
+      ACTOR,
+    );
+
+    expect(core.createPosting.mock.calls[0][2]).toMatchObject({
+      type: 'Adjustment',
+      negative: true,
     });
+  });
 
-    // 없는 창구로 보내면 요금이 붙을 때마다 실패한다.
-    it('열려 있지 않은 창구로는 걸지 않는다', async () => {
-      const tx = buildTx();
-      const prisma = buildPrisma(tx);
-      prisma.folio.findUnique.mockResolvedValue(null);
-
-      const service = await buildService(tx, prisma);
-      await expect(
-        service.setRouting('res-1', { transactionCode: '1000', targetWindow: 5 }, ACTOR),
-      ).rejects.toThrow(/열려 있지 않습니다/);
+  it('OPERA 가 거절하면 그대로 올린다', async () => {
+    const prisma = buildPrisma();
+    const core = buildCore({
+      createPosting: jest.fn().mockRejectedValue(new BadRequestException('이미 마감')),
     });
+    const service = await buildService(prisma, core);
 
-    it('없는 지시는 해제하지 못한다', async () => {
-      const tx = buildTx();
-      const prisma = buildPrisma(tx);
+    await expect(service.addPosting('res-1', 1, CHARGE, ACTOR)).rejects.toThrow(/이미 마감/);
+  });
 
-      const service = await buildService(tx, prisma);
-      await expect(service.removeRouting('res-1', '9999', ACTOR)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+  it('실패를 SyncLog 에 남긴다', async () => {
+    const prisma = buildPrisma();
+    const core = buildCore({
+      createPosting: jest.fn().mockRejectedValue(new Error('연결 실패')),
     });
+    const service = await buildService(prisma, core);
 
-    it('해제하면 지시를 지운다', async () => {
-      const tx = buildTx();
-      const prisma = buildPrisma(tx);
-      prisma.folioRouting.findUnique.mockResolvedValue({ id: 'route-1' });
+    await expect(service.addPosting('res-1', 1, CHARGE, ACTOR)).rejects.toThrow();
+    expect(prisma.syncLog.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
+    );
+  });
 
-      const service = await buildService(tx, prisma);
-      await service.removeRouting('res-1', '1000', ACTOR);
-
-      expect(prisma.folioRouting.delete).toHaveBeenCalledWith({ where: { id: 'route-1' } });
+  it('OPERA 에 연결되지 않은 예약은 막는다', async () => {
+    const prisma = buildPrisma({
+      reservation: {
+        findUnique: jest.fn().mockResolvedValue({ ...RESERVATION, operaReservationId: null }),
+      },
     });
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await expect(service.addPosting('res-1', 1, CHARGE, ACTOR)).rejects.toThrow(/동기화/);
+    expect(core.createPosting).not.toHaveBeenCalled();
+  });
+
+  it('없는 예약이면 404 를 낸다', async () => {
+    const prisma = buildPrisma({
+      reservation: { findUnique: jest.fn().mockResolvedValue(null) },
+    });
+    const service = await buildService(prisma);
+
+    await expect(service.addPosting('nope', 1, CHARGE, ACTOR)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+});
+
+describe('FoliosService — 이관', () => {
+  function posting(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'post-1',
+      operaPostingId: 'PST-801',
+      paymentId: null,
+      folio: { reservationId: 'res-1', window: 1, status: FolioStatus.OPEN },
+      ...overrides,
+    };
+  }
+
+  it('OPERA 에 맡기고 두 창구를 함께 갱신한다', async () => {
+    const prisma = buildPrisma({ posting: { findUnique: jest.fn().mockResolvedValue(posting()) } });
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR);
+
+    expect(core.transferPosting).toHaveBeenCalledWith('RSV-1001', 'PST-801', {
+      hotelId: 'SAND01',
+      toWindow: 2,
+    });
+  });
+
+  /*
+   * Payment 가 폴리오를 가리키고 있어, 포스팅만 옮기면 환불이 어느 폴리오를
+   * 되돌려야 할지 알 수 없다. OPERA 는 이 관계를 모르므로 여기서 막는다.
+   */
+  it('결제로 생긴 거래는 옮기지 않는다', async () => {
+    const prisma = buildPrisma({
+      posting: { findUnique: jest.fn().mockResolvedValue(posting({ paymentId: 'pay-1' })) },
+    });
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await expect(
+      service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
+    ).rejects.toThrow(/결제로 생긴 거래/);
+    expect(core.transferPosting).not.toHaveBeenCalled();
+  });
+
+  it('OPERA 와 연결되지 않은 거래는 옮기지 않는다', async () => {
+    const prisma = buildPrisma({
+      posting: { findUnique: jest.fn().mockResolvedValue(posting({ operaPostingId: null })) },
+    });
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await expect(
+      service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
+    ).rejects.toThrow(/동기화/);
+  });
+
+  it('다른 예약의 거래는 옮기지 않는다', async () => {
+    const prisma = buildPrisma({
+      posting: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(posting({ folio: { reservationId: 'res-9', window: 1 } })),
+      },
+    });
+    const service = await buildService(prisma);
+
+    await expect(
+      service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('FoliosService — 라우팅 지시', () => {
+  it('거래 코드별 목적지를 저장한다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    await service.setRouting('res-1', { transactionCode: '1000', targetWindow: 2 }, ACTOR);
+
+    expect(prisma.folioRouting.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          reservationId_transactionCode: { reservationId: 'res-1', transactionCode: '1000' },
+        },
+      }),
+    );
+  });
+
+  // 없는 창구로 보내면 요금이 붙을 때마다 실패한다.
+  it('열려 있지 않은 창구로는 걸지 않는다', async () => {
+    const prisma = buildPrisma({ folio: { findUnique: jest.fn().mockResolvedValue(null) } });
+    const service = await buildService(prisma);
+
+    await expect(
+      service.setRouting('res-1', { transactionCode: '1000', targetWindow: 5 }, ACTOR),
+    ).rejects.toThrow(/열려 있지 않습니다/);
+  });
+
+  it('없는 지시는 해제하지 못한다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    await expect(service.removeRouting('res-1', '9999', ACTOR)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('해제하면 지시를 지운다', async () => {
+    const prisma = buildPrisma({
+      folioRouting: { findUnique: jest.fn().mockResolvedValue({ id: 'route-1' }) },
+    });
+    const service = await buildService(prisma);
+
+    await service.removeRouting('res-1', '1000', ACTOR);
+    expect(prisma.folioRouting.delete).toHaveBeenCalledWith({ where: { id: 'route-1' } });
   });
 });

@@ -274,6 +274,24 @@ export class ReservationsService {
       throw error;
     }
 
+    /*
+     * 폴리오 마감도 OPERA 가 한다.
+     *
+     * 로컬만 닫으면 OPERA 의 계산서는 열려 있어 요금이 계속 붙을 수 있다.
+     * 체크아웃 자체는 위에서 이미 확정됐으므로, 마감에 실패해도 되돌리지 않고
+     * 로그에 남긴다 — 손님은 이미 나갔고 상태를 되돌리는 편이 더 위험하다.
+     */
+    for (const folio of reservation.folios.filter((f) => f.status === FolioStatus.OPEN)) {
+      try {
+        await this.core.closeFolio(operaId, folio.window, {
+          hotelId: reservation.property.operaHotelId,
+        });
+      } catch (error) {
+        const closeLog = await this.startLog(id, { action: 'closeFolio', window: folio.window });
+        await this.finishLog(closeLog.id, SyncStatus.FAILED, error);
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.folio.updateMany({
         where: { reservationId: id, status: FolioStatus.OPEN },

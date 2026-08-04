@@ -10,7 +10,10 @@ import type {
   CoreBusinessDate,
   CoreCreateBlockInput,
   CoreCreateReservationInput,
+  CoreCreatePostingInput,
   CoreCreateRoomOutageInput,
+  CoreFolio,
+  CoreFolioListResponse,
   CoreProfile,
   CoreRateParams,
   CoreRateResponse,
@@ -123,6 +126,73 @@ export class CoreClient {
       `/v1/housekeeping/rooms/${encodeURIComponent(roomNumber)}/status`,
       undefined,
       { method: 'PUT', json: input },
+    );
+  }
+
+  // --- 폴리오. 회계 원장은 OPERA 가 원천이고 잔액도 저쪽이 계산한다 ---------
+
+  listFolios(reservationId: string): Promise<CoreFolioListResponse> {
+    return this.request<CoreFolioListResponse>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/folios`,
+    );
+  }
+
+  openFolio(
+    reservationId: string,
+    input: { hotelId?: string; window?: number },
+  ): Promise<CoreFolio> {
+    return this.request<CoreFolio>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/folios`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
+  createPosting(
+    reservationId: string,
+    window: number,
+    input: CoreCreatePostingInput,
+  ): Promise<CoreFolio> {
+    return this.request<CoreFolio>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/folios/${window}/postings`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
+  voidPosting(
+    reservationId: string,
+    postingId: string,
+    input: { hotelId?: string; reason?: string; reference?: string },
+  ): Promise<CoreFolio> {
+    return this.request<CoreFolio>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/folios/postings/${encodeURIComponent(postingId)}/void`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
+  transferPosting(
+    reservationId: string,
+    postingId: string,
+    input: { hotelId?: string; toWindow: number },
+  ): Promise<CoreFolioListResponse> {
+    return this.request<CoreFolioListResponse>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/folios/postings/${encodeURIComponent(postingId)}/transfer`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
+  closeFolio(
+    reservationId: string,
+    window: number,
+    input: { hotelId?: string },
+  ): Promise<CoreFolio> {
+    return this.request<CoreFolio>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/folios/${window}/close`,
+      undefined,
+      { method: 'POST', json: input },
     );
   }
 
