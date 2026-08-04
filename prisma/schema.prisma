@@ -50,6 +50,7 @@ model User {
   roomOutages       RoomOutage[]
   folioRoutings     FolioRouting[]
   transferredPostings Posting[]
+  cashierShifts     CashierShift[]
 
   @@index([propertyId])
   @@map("users")
@@ -81,6 +82,7 @@ model Property {
   posOutlets        PosOutlet[]
   roomKeys          RoomKey[]
   roomOutages       RoomOutage[]
+  cashierShifts     CashierShift[]
 
   @@map("properties")
 }
@@ -603,12 +605,52 @@ model Payment {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  folio     Folio     @relation(fields: [folioId], references: [id], onDelete: Cascade)
-  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  /// 받은 근무조. 마감할 때 이 조의 수납을 모아 시재와 맞춘다.
+  shiftId String?
+
+  folio     Folio         @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  createdBy User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
   postings  Posting[]
+  shift     CashierShift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
   @@index([folioId, status])
+  @@index([shiftId])
   @@map("payments")
+}
+
+/**
+ * 캐셔 근무조.
+ *
+ * 프런트는 교대로 돈을 받는다. 누가 얼마를 받았는지 조별로 끊어 두지 않으면
+ * 현금이 맞지 않을 때 어느 시간대의 누구를 봐야 하는지 알 수 없다.
+ *
+ * 이 기록은 우리 직원의 근무 편성이라 OPERA 에 보내지 않는다 — 하우스키핑
+ * 배정과 같은 이유다. 돈 자체는 이미 OPERA 폴리오에 올라가 있고, 여기서는
+ * "누가 받아서 금고에 얼마를 넣었는가" 만 다룬다.
+ */
+model CashierShift {
+  id         String    @id @default(cuid())
+  propertyId String
+  userId     String
+  openedAt   DateTime  @default(now())
+  closedAt   DateTime?
+
+  /// 시작 시재. 거스름돈용으로 넣어 둔 현금이다.
+  openingFloat Decimal @default(0) @db.Decimal(12, 2)
+  /// 마감할 때 실제로 센 현금. 마감 전에는 비어 있다.
+  countedCash  Decimal? @db.Decimal(12, 2)
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  property Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@index([propertyId, closedAt])
+  @@index([userId, closedAt])
+  @@map("cashier_shifts")
 }
 
 enum RoomKeyStatus {

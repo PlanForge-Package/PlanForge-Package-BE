@@ -39,6 +39,21 @@ export async function mirrorFolios(
   const keptPostingIds: string[] = [];
 
   for (const folio of folios) {
+    /*
+     * 다른 행이 같은 OPERA 식별자를 들고 있으면 그쪽이 낡은 것이다.
+     *
+     * 사본의 고유 제약은 정합성 장치이지 업무 규칙이 아니다. 여기서 걸려
+     * 예외가 나면 이미 돈이 오간 뒤에 500 이 떨어지고, 그 결제는 OPERA 에는
+     * 있고 우리 화면에는 없는 상태로 남는다. 지금 OPERA 가 말하는 쪽을 따른다.
+     */
+    await tx.folio.updateMany({
+      where: {
+        operaFolioId: folio.folioId,
+        OR: [{ reservationId: { not: reservationId } }, { window: { not: folio.window } }],
+      },
+      data: { operaFolioId: null },
+    });
+
     const saved = await tx.folio.upsert({
       where: { reservationId_window: { reservationId, window: folio.window } },
       update: {

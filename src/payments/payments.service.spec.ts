@@ -77,6 +77,8 @@ function buildPrisma(overrides: Record<string, unknown> = {}) {
         window: 1,
       }),
     },
+    // 근무조를 열지 않고도 수납할 수 있다. 그 수납은 어느 조에도 붙지 않는다.
+    cashierShift: { findFirst: jest.fn().mockResolvedValue(null) },
     payment: {
       findUnique: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
@@ -184,6 +186,39 @@ describe('PaymentsService — 승인', () => {
     expect(result.status).toBe(PaymentStatus.CAPTURED);
     // 부호는 OPERA 가 종류로 정한다. 우리는 양수로 보낸다.
     expect(core.createPosting.mock.calls[0][2]).toMatchObject({ type: 'Payment', amount: 340000 });
+  });
+
+  /*
+   * 조를 열지 않고도 수납할 수 있게 둔다 — 손님을 세워 두고 "먼저 근무조를
+   * 여세요" 라고 할 수는 없다. 대신 그 수납은 마감 집계에서 빠진다.
+   */
+  it('열린 근무조가 있으면 그 조에 붙인다', async () => {
+    const prisma = buildPrisma();
+    prisma.cashierShift.findFirst.mockResolvedValue({ id: 'shift-1' });
+    const service = await buildService(prisma);
+
+    await service.authorize(
+      'res-1',
+      1,
+      { ...CARD, method: PaymentMethod.CASH, paymentToken: undefined },
+      ACTOR,
+    );
+
+    expect(prisma.payment.create.mock.calls[0][0].data.shiftId).toBe('shift-1');
+  });
+
+  it('열린 근무조가 없으면 어느 조에도 붙이지 않는다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    await service.authorize(
+      'res-1',
+      1,
+      { ...CARD, method: PaymentMethod.CASH, paymentToken: undefined },
+      ACTOR,
+    );
+
+    expect(prisma.payment.create.mock.calls[0][0].data.shiftId).toBeUndefined();
   });
 
   it('카드인데 토큰이 없으면 거절한다', async () => {

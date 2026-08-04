@@ -229,6 +229,10 @@ cd deploy && docker compose up -d
 | `POST` | `/api/reservations/:id/folios/:window/payments` | オーソリ |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | 売上確定・オーソリ取消 |
 | `POST` | `/api/payments/:id/refund` | 返金（MANAGER） |
+| `GET` | `/api/cashier/shifts/current` | 開いている自分のシフトと集計 |
+| `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | 過去のシフト・詳細 |
+| `POST` | `/api/cashier/shifts` | シフト開始（釣銭準備金） |
+| `POST` | `/api/cashier/shifts/:id/close` | 締め —— 過不足を残します |
 
 </details>
 

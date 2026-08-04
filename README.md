@@ -228,6 +228,10 @@ cd deploy && docker compose up -d
 | `POST` | `/api/reservations/:id/folios/:window/payments` | 승인 |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | 매입 · 승인 취소 |
 | `POST` | `/api/payments/:id/refund` | 환불 (MANAGER) |
+| `GET` | `/api/cashier/shifts/current` | 지금 열려 있는 내 근무조와 집계 |
+| `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | 지난 근무조 · 상세 |
+| `POST` | `/api/cashier/shifts` | 근무조 시작 (시작 시재) |
+| `POST` | `/api/cashier/shifts/:id/close` | 마감 — 센 현금과의 차이를 남깁니다 |
 
 </details>
 

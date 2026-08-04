@@ -97,6 +97,8 @@ export class PaymentsService {
      * 두 단계로 나누면 프런트가 "매입" 을 한 번 더 눌러야 하고, 그걸 잊으면
      * 받은 돈이 폴리오에 없다.
      */
+    const shiftId = await this.openShiftId(user);
+
     if (dto.method !== PaymentMethod.CARD) {
       const payment = await this.prisma.payment.create({
         data: {
@@ -108,6 +110,7 @@ export class PaymentsService {
           idempotencyKey: dto.idempotencyKey,
           capturedAt: new Date(),
           createdById: user.id,
+          shiftId,
         },
       });
       await this.postPayment(reservationId, window, payment, amount, dto.description);
@@ -172,8 +175,25 @@ export class PaymentsService {
         maskedCard: result.maskedCard,
         cardBrand: result.cardBrand,
         createdById: user.id,
+        shiftId,
       },
     });
+  }
+
+  /**
+   * 지금 열려 있는 내 근무조.
+   *
+   * 조를 열지 않고도 수납할 수 있게 둔다 — 손님을 세워 두고 "먼저 근무조를
+   * 여세요" 라고 할 수는 없다. 대신 그 수납은 어느 조에도 붙지 않으므로 마감
+   * 집계에서 빠진다.
+   */
+  private async openShiftId(user: AuthUser): Promise<string | undefined> {
+    const shift = await this.prisma.cashierShift.findFirst({
+      where: { userId: user.id, closedAt: null },
+      select: { id: true },
+      orderBy: { openedAt: 'desc' },
+    });
+    return shift?.id;
   }
 
   /** 매입. 이때 폴리오에 결제가 올라간다. */

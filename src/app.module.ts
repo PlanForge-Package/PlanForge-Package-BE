@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { BlocksModule } from './blocks/blocks.module';
+import { CashierModule } from './cashier/cashier.module';
 import { CoreModule } from './core/core.module';
 import { DoorLockModule } from './doorlock/doorlock.module';
 import { FoliosModule } from './folios/folios.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     AuthModule,
     BlocksModule,
+    CashierModule,
     CoreModule,
     DoorLockModule,
     HealthModule,

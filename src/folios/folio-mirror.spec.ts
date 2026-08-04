@@ -9,6 +9,7 @@ function buildTx(overrides: Record<string, unknown> = {}) {
         id: `folio-${where.reservationId_window.window}`,
         ...create,
       })),
+      updateMany: jest.fn(),
     },
     posting: {
       upsert: jest.fn().mockImplementation(({ where, create }) => ({
@@ -198,5 +199,21 @@ describe('folio-mirror', () => {
     const create = tx.posting.upsert.mock.calls[0][0].create;
     expect(create.amount).toBeInstanceOf(Prisma.Decimal);
     expect(create.amount.toString()).toBe('240000');
+  });
+  /*
+   * 사본의 고유 제약은 정합성 장치이지 업무 규칙이 아니다. 여기서 걸려 예외가
+   * 나면 이미 돈이 오간 뒤에 500 이 떨어진다.
+   */
+  it('같은 식별자를 든 낡은 행에서 먼저 떼어 낸다', async () => {
+    const tx = buildTx();
+    await mirrorFolios(tx as never, 'res-1', 'KRW', [folio()]);
+
+    expect(tx.folio.updateMany).toHaveBeenCalledWith({
+      where: {
+        operaFolioId: 'FOL-801',
+        OR: [{ reservationId: { not: 'res-1' } }, { window: { not: 1 } }],
+      },
+      data: { operaFolioId: null },
+    });
   });
 });

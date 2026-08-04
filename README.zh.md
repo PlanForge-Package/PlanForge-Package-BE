@@ -226,6 +226,10 @@ cd deploy && docker compose up -d
 | `POST` | `/api/reservations/:id/folios/:window/payments` | 授权 |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | 请款 · 撤销授权 |
 | `POST` | `/api/payments/:id/refund` | 退款（MANAGER） |
+| `GET` | `/api/cashier/shifts/current` | 我当前的班次与汇总 |
+| `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | 历史班次 · 详情 |
+| `POST` | `/api/cashier/shifts` | 开始班次（备用金） |
+| `POST` | `/api/cashier/shifts/:id/close` | 结班 —— 记录长短款 |
 
 </details>
 

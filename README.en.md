@@ -230,6 +230,10 @@ internal network with no published ports.
 | `POST` | `/api/reservations/:id/folios/:window/payments` | Authorize |
 | `POST` | `/api/payments/:id/capture` `\|` `/void` | Capture · void |
 | `POST` | `/api/payments/:id/refund` | Refund (MANAGER) |
+| `GET` | `/api/cashier/shifts/current` | My open shift and its totals |
+| `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | Past shifts · detail |
+| `POST` | `/api/cashier/shifts` | Open a shift (with the opening float) |
+| `POST` | `/api/cashier/shifts/:id/close` | Close — records the variance |
 
 </details>
 
