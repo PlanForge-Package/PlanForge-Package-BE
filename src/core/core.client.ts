@@ -165,6 +165,34 @@ export class CoreClient {
     );
   }
 
+  /**
+   * 체크인.
+   *
+   * 객실 번호를 함께 보낸다. 어느 방에 들어갔는지를 OPERA 가 모르면 그 방을
+   * 여전히 빈 방으로 보고 다른 예약에 배정한다.
+   */
+  checkInReservation(
+    reservationId: string,
+    input: { hotelId?: string; roomNumber: string },
+  ): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/check-in`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
+  checkOutReservation(
+    reservationId: string,
+    input: { hotelId?: string } = {},
+  ): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/check-out`,
+      undefined,
+      { method: 'POST', json: input },
+    );
+  }
+
   noShowReservation(reservationId: string, reason?: string): Promise<CoreReservation> {
     return this.request<CoreReservation>(
       `/v1/reservations/${encodeURIComponent(reservationId)}/no-show`,
