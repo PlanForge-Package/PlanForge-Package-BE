@@ -244,6 +244,22 @@ internal network with no published ports.
 </details>
 
 <details>
+<summary><b>City ledger (AR)</b></summary>
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/ar/accounts` | Accounts with balances |
+| `GET` | `/api/ar/accounts/:id` | Account detail — balance, ledger, invoices |
+| `POST` `PATCH` | `/api/ar/accounts` | Create · update an account (MANAGER) |
+| `POST` | `/api/reservations/:id/ar/transfer` | Move a folio balance to an account — clears the OPERA folio too |
+| `POST` | `/api/ar/accounts/:id/payments` | Record a payment (MANAGER) |
+| `POST` | `/api/ar/accounts/:id/invoices` | Issue an invoice from unbilled charges (MANAGER) |
+| `GET` | `/api/ar/invoices/:id` | Invoice detail |
+| `PATCH` | `/api/ar/invoices/:id/status` | Status — voiding releases its charges (MANAGER) |
+
+</details>
+
+<details>
 <summary><b>Blocks · profiles · room keys</b></summary>
 
 | Method | Path | Description |

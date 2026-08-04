@@ -1,0 +1,124 @@
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client';
+import type { AuthUser } from '../auth/auth.constants';
+import { Roles } from '../auth/auth.constants';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { ArService } from './ar.service';
+import {
+  CreateAccountDto,
+  CreateInvoiceDto,
+  ListAccountsDto,
+  RecordArPaymentDto,
+  TransferToArDto,
+  UpdateAccountDto,
+  UpdateInvoiceStatusDto,
+} from './dto/ar.dto';
+
+/**
+ * AR / 시티레저 — 후불 거래처.
+ *
+ * 거래처 등록과 청구서는 채권 관리라 지배인이 맡는다. 폴리오 이관은 손님이
+ * 나갈 때 프런트가 하므로 프론트데스크도 할 수 있어야 한다.
+ */
+@ApiTags('ar')
+@ApiBearerAuth()
+@Controller('ar')
+export class ArController {
+  constructor(private readonly ar: ArService) {}
+
+  @Get('accounts')
+  @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
+  @ApiOperation({ summary: '거래처 목록 — 잔액 포함' })
+  listAccounts(@Query() query: ListAccountsDto, @CurrentUser() user: AuthUser) {
+    return this.ar.listAccounts(query, user);
+  }
+
+  @Get('accounts/:id')
+  @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
+  @ApiOperation({ summary: '거래처 상세 — 잔액·거래·청구서' })
+  accountDetail(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.ar.accountDetail(id, user);
+  }
+
+  @Post('accounts')
+  @Roles(UserRole.MANAGER)
+  @ApiOperation({ summary: '거래처 등록' })
+  createAccount(@Body() dto: CreateAccountDto, @CurrentUser() user: AuthUser) {
+    return this.ar.createAccount(dto, user);
+  }
+
+  @Patch('accounts/:id')
+  @Roles(UserRole.MANAGER)
+  @ApiOperation({ summary: '거래처 수정 — 여신 한도·결제 조건·거래 중지' })
+  updateAccount(
+    @Param('id') id: string,
+    @Body() dto: UpdateAccountDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ar.updateAccount(id, dto, user);
+  }
+
+  @Post('accounts/:id/payments')
+  @Roles(UserRole.MANAGER)
+  @ApiOperation({ summary: '거래처 입금 기록' })
+  recordPayment(
+    @Param('id') id: string,
+    @Body() dto: RecordArPaymentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ar.recordPayment(id, dto, user);
+  }
+
+  @Post('accounts/:id/invoices')
+  @Roles(UserRole.MANAGER)
+  @ApiOperation({ summary: '청구서 발행 — 미청구 거래를 모읍니다' })
+  createInvoice(
+    @Param('id') id: string,
+    @Body() dto: CreateInvoiceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ar.createInvoice(id, dto, user);
+  }
+
+  @Get('invoices/:id')
+  @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
+  @ApiOperation({ summary: '청구서 상세' })
+  invoiceDetail(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.ar.invoiceDetail(id, user);
+  }
+
+  @Patch('invoices/:id/status')
+  @Roles(UserRole.MANAGER)
+  @ApiOperation({ summary: '청구서 상태 — 무효로 돌리면 거래를 다시 풀어 줍니다' })
+  updateInvoiceStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateInvoiceStatusDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ar.updateInvoiceStatus(id, dto, user);
+  }
+}
+
+/**
+ * 폴리오 → 거래처 이관.
+ *
+ * 예약 아래에 두는 이유는 프런트가 손님을 내보내며 쓰는 동작이기 때문이다.
+ */
+@ApiTags('ar')
+@ApiBearerAuth()
+@Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
+@Controller('reservations/:reservationId/ar')
+export class ReservationArController {
+  constructor(private readonly ar: ArService) {}
+
+  @Post('transfer')
+  @ApiOperation({ summary: '폴리오 잔액을 거래처로 이관 — OPERA 폴리오도 비웁니다' })
+  transfer(
+    @Param('reservationId') reservationId: string,
+    @Body() dto: TransferToArDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ar.transferFolio(reservationId, dto, user);
+  }
+}

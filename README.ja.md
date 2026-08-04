@@ -243,6 +243,22 @@ cd deploy && docker compose up -d
 </details>
 
 <details>
+<summary><b>後払い取引先 (AR・シティレジャー)</b></summary>
+
+| メソッド | パス | 説明 |
+| --- | --- | --- |
+| `GET` | `/api/ar/accounts` | 取引先一覧 — 残高付き |
+| `GET` | `/api/ar/accounts/:id` | 取引先詳細 — 残高・元帳・請求書 |
+| `POST` `PATCH` | `/api/ar/accounts` | 取引先の登録・修正 (MANAGER) |
+| `POST` | `/api/reservations/:id/ar/transfer` | フォリオ残高を取引先へ振替 — OPERA のフォリオも空にします |
+| `POST` | `/api/ar/accounts/:id/payments` | 入金の記録 (MANAGER) |
+| `POST` | `/api/ar/accounts/:id/invoices` | 未請求の取引をまとめて請求書を発行 (MANAGER) |
+| `GET` | `/api/ar/invoices/:id` | 請求書詳細 |
+| `PATCH` | `/api/ar/invoices/:id/status` | 状態変更 — 無効に戻すと取引が解放されます (MANAGER) |
+
+</details>
+
+<details>
 <summary><b>団体・プロファイル・客室キー</b></summary>
 
 | メソッド | パス | 説明 |

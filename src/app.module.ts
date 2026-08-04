@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ArModule } from './ar/ar.module';
 import { AuthModule } from './auth/auth.module';
 import { BlocksModule } from './blocks/blocks.module';
 import { CashierModule } from './cashier/cashier.module';
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     // 전역 기본 제한. 로그인은 auth/throttle.ts 에서 훨씬 좁게 다시 잡는다.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
     PrismaModule,
+    ArModule,
     AuthModule,
     BlocksModule,
     CashierModule,

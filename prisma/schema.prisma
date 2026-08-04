@@ -53,6 +53,8 @@ model User {
   cashierShifts       CashierShift[]
   createdTraces       ReservationTrace[] @relation("TraceCreatedBy")
   completedTraces     ReservationTrace[] @relation("TraceCompletedBy")
+  arTransactions      ArTransaction[]
+  arInvoices          ArInvoice[]
 
   @@index([propertyId])
   @@map("users")
@@ -86,6 +88,8 @@ model Property {
   roomOutages       RoomOutage[]
   cashierShifts     CashierShift[]
   traces            ReservationTrace[]
+  arAccounts        ArAccount[]
+  arInvoices        ArInvoice[]
 
   @@map("properties")
 }
@@ -372,6 +376,7 @@ model Profile {
   reservations Reservation[]
   mergedInto   Profile?      @relation("ProfileMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
   mergedFrom   Profile[]     @relation("ProfileMerge")
+  arAccounts   ArAccount[]
 
   @@index([email])
   @@index([lastName, firstName])
@@ -413,7 +418,6 @@ model Reservation {
   assignedRoomNumber String?
   /**
    * 객실을 함께 쓰는 예약들의 묶음.
-   *
    * 두 손님이 한 방을 쓰되 계산은 따로 하는 편성이다. 예약은 둘이지만 객실은
    * 하나이므로 재고도 하나만 차지한다. OPERA 가 부여한 값을 그대로 옮겨 적는다.
    */
@@ -439,14 +443,15 @@ model Reservation {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  property Property           @relation(fields: [propertyId], references: [id])
-  profile  Profile            @relation(fields: [profileId], references: [id])
-  roomType RoomType           @relation(fields: [roomTypeId], references: [id])
-  ratePlan RatePlan?          @relation(fields: [ratePlanId], references: [id])
-  folios   Folio[]
-  roomKeys RoomKey[]
-  routings FolioRouting[]
-  traces   ReservationTrace[]
+  property       Property           @relation(fields: [propertyId], references: [id])
+  profile        Profile            @relation(fields: [profileId], references: [id])
+  roomType       RoomType           @relation(fields: [roomTypeId], references: [id])
+  ratePlan       RatePlan?          @relation(fields: [ratePlanId], references: [id])
+  folios         Folio[]
+  roomKeys       RoomKey[]
+  routings       FolioRouting[]
+  traces         ReservationTrace[]
+  arTransactions ArTransaction[]
 
   @@index([propertyId, arrivalDate])
   @@index([propertyId, status])
@@ -797,6 +802,137 @@ model Posting {
   @@unique([outletId, reference])
   @@index([folioId, postedAt])
   @@map("postings")
+}
+
+// ---------------------------------------------------------------------------
+// AR / 시티레저 — 후불 거래처
+// ---------------------------------------------------------------------------
+
+enum ArTransactionType {
+  /// 거래처 앞으로 넘어온 청구. 폴리오에서 이관되거나 직접 올린다.
+  CHARGE
+  /// 거래처가 보낸 입금
+  PAYMENT
+  /// 정정. 방향은 금액 부호가 정한다.
+  ADJUSTMENT
+}
+
+enum ArInvoiceStatus {
+  /// 발행했지만 아직 보내지 않음
+  DRAFT
+  SENT
+  PAID
+  /// 잘못 발행한 청구서. 지우지 않고 무효로 남긴다.
+  VOID
+}
+
+/**
+ * 후불 거래처(시티레저).
+ * 회사·여행사 앞으로 요금을 달아 두고 월말에 청구한다. 손님이 나갈 때 돈을
+ * 받지 않으므로, 그 금액은 폴리오에서 빠져나와 이 원장에 쌓인다.
+ * 이 원장은 우리가 들고 간다 — 폴리오는 OPERA 가 원천이지만, 거래처에
+ * 언제 얼마를 청구했고 무엇이 미수인지는 호텔의 채권 관리다. OHIP 의 AR
+ * API 를 확인하면 그때 위임을 검토한다.
+ */
+model ArAccount {
+  id         String  @id @default(cuid())
+  propertyId String
+  /// 거래처 코드. 청구서와 대사에서 쓰는 짧은 식별자.
+  code       String
+  name       String
+  /// 연결된 프로필(회사·여행사). 예약을 그 거래처로 묶을 때 쓴다.
+  profileId  String?
+
+  /// 여신 한도. 미수가 이 값을 넘으면 새 이관을 막는다. null 이면 한도 없음.
+  creditLimit Decimal? @db.Decimal(12, 2)
+  /// 결제 조건(일). 청구서 만기일을 이 값으로 계산한다.
+  termDays    Int      @default(30)
+
+  billingEmail String?
+  notes        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  property     Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  profile      Profile?        @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  transactions ArTransaction[]
+  invoices     ArInvoice[]
+
+  @@unique([propertyId, code])
+  @@index([propertyId, active])
+  @@map("ar_accounts")
+}
+
+/**
+ * 거래처 원장의 한 줄.
+ * 잔액을 따로 저장하지 않는다. 거래 합계로 매번 다시 센다 — 증분으로 더해
+ * 가면 한 번의 실패가 영구적인 잔액 오차로 남는다. 폴리오와 같은 규칙이다.
+ */
+model ArTransaction {
+  id          String            @id @default(cuid())
+  accountId   String
+  invoiceId   String?
+  type        ArTransactionType
+  /// 부호가 붙은 값. 청구는 양수, 입금은 음수다.
+  amount      Decimal           @db.Decimal(12, 2)
+  currency    String            @default("KRW")
+  description String
+
+  /// 어느 예약에서 넘어왔는지. 대사할 때 되짚는다.
+  reservationId String?
+  /// 폴리오에서 이관된 거래면 그 창구. 사람이 확인할 때 필요하다.
+  folioWindow   Int?
+
+  postedAt    DateTime @default(now())
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  account     ArAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  invoice     ArInvoice?   @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation(fields: [createdById], references: [id])
+
+  @@index([accountId, postedAt])
+  @@index([invoiceId])
+  @@map("ar_transactions")
+}
+
+/**
+ * 청구서.
+ * 미청구 거래를 모아 한 장으로 만든다. 청구서에 묶인 거래는 다시 다른
+ * 청구서에 들어가지 않는다 — 두 번 청구하면 거래처가 두 번 낸다.
+ */
+model ArInvoice {
+  id         String          @id @default(cuid())
+  propertyId String
+  accountId  String
+  /// 청구서 번호. 거래처와 주고받는 식별자다.
+  number     String
+  status     ArInvoiceStatus @default(DRAFT)
+
+  /// 발행 시점의 합계. 이후 거래가 붙어도 이 값은 바뀌지 않는다.
+  total    Decimal   @db.Decimal(12, 2)
+  currency String    @default("KRW")
+  issuedAt DateTime  @default(now())
+  dueDate  DateTime  @db.Date
+  sentAt   DateTime?
+  paidAt   DateTime?
+  voidedAt DateTime?
+  note     String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  property     Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  account      ArAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transactions ArTransaction[]
+  createdBy    User?           @relation(fields: [createdById], references: [id])
+
+  @@unique([propertyId, number])
+  @@index([accountId, status])
+  @@map("ar_invoices")
 }
 
 // ---------------------------------------------------------------------------

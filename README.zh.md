@@ -240,6 +240,22 @@ cd deploy && docker compose up -d
 </details>
 
 <details>
+<summary><b>挂账客户（AR · 城市账）</b></summary>
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/ar/accounts` | 挂账客户列表 —— 含余额 |
+| `GET` | `/api/ar/accounts/:id` | 客户详情 —— 余额、流水、账单 |
+| `POST` `PATCH` | `/api/ar/accounts` | 新建 · 修改客户（MANAGER） |
+| `POST` | `/api/reservations/:id/ar/transfer` | 将账夹余额转入挂账 —— 同时清空 OPERA 账夹 |
+| `POST` | `/api/ar/accounts/:id/payments` | 登记回款（MANAGER） |
+| `POST` | `/api/ar/accounts/:id/invoices` | 汇总未开票流水生成账单（MANAGER） |
+| `GET` | `/api/ar/invoices/:id` | 账单详情 |
+| `PATCH` | `/api/ar/invoices/:id/status` | 状态变更 —— 作废后流水重新可开票（MANAGER） |
+
+</details>
+
+<details>
 <summary><b>团队 · 客史 · 房卡</b></summary>
 
 | 方法 | 路径 | 说明 |
