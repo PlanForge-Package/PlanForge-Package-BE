@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
@@ -9,8 +9,9 @@ import {
   CancelBookingDto,
   CheckAvailabilityDto,
   CreateBookingDto,
-  UpdateBookingDto,
+  SetGuaranteeDto,
   ShareReservationDto,
+  UpdateBookingDto,
 } from './dto/booking.dto';
 import { CheckInDto, CheckOutDto } from './dto/front-desk.dto';
 import { ListReservationsDto } from './dto/list-reservations.dto';
@@ -59,6 +60,23 @@ export class ReservationsController {
   @ApiOperation({ summary: '예약 취소' })
   cancel(@Param('id') id: string, @Body() dto: CancelBookingDto, @CurrentUser() user: AuthUser) {
     return this.booking.cancel(id, dto, user);
+  }
+
+  // 취소하기 전에 손님에게 알려야 하는 값이다. 물리고 나서 통보하면 사후 정산이다.
+  @Get(':id/policies')
+  @ApiOperation({ summary: '취소 조건·보증금 — 취소 시 물게 될 금액' })
+  policies(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.booking.policies(id, user);
+  }
+
+  @Put(':id/guarantee')
+  @ApiOperation({ summary: '보증 방식 변경 — 노쇼를 어떻게 다룰지가 갈립니다' })
+  setGuarantee(
+    @Param('id') id: string,
+    @Body() dto: SetGuaranteeDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.booking.setGuarantee(id, dto.guaranteeCode, user);
   }
 
   @Post(':id/share')

@@ -219,6 +219,9 @@ internal network with no published ports.
 | `GET` | `/api/reservations` | Reservation list (status · channel · search) |
 | `GET` | `/api/reservations/summary` | Today's arrivals · departures · in-house |
 | `GET` | `/api/reservations/:id` | Single reservation (with folios) |
+| `GET` | `/api/reservations/:id/policies` | Cancellation terms and deposit |
+| `PUT` | `/api/reservations/:id/guarantee` | Change the guarantee type |
+| `POST` | `/api/reservations/:id/folios/deposit` | Take a deposit — even before arrival |
 | `POST` | `/api/reservations/:id/check-in` | Check in — assign room · open folio |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | Confirm a waitlisted booking |
 | `POST` | `/api/reservations/:id/share` `\|` `/unshare` | Share a room · leave the group |

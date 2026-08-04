@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PostingType } from '@prisma/client';
+import { PaymentMethod, PostingType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
@@ -85,4 +85,34 @@ export class OpenFolioDto {
   @Min(1)
   @Max(8)
   window?: number;
+}
+
+/**
+ * 보증금 수납.
+ *
+ * 전표 번호를 함께 보내면 같은 보증금을 두 번 받지 않는다 — 손님 돈이 두 번
+ * 나가는 일은 되돌리기 어렵다.
+ */
+export class RecordDepositDto {
+  @ApiProperty({ description: '받은 금액 (양수)', example: 100000 })
+  @Type(() => Number)
+  @IsInt({ message: '보증금은 정수여야 합니다.' })
+  @IsPositive()
+  amount!: number;
+
+  @ApiProperty({ enum: PaymentMethod, description: '받은 방법' })
+  @IsEnum(PaymentMethod)
+  method!: PaymentMethod;
+
+  @ApiPropertyOptional({ description: '적요', example: '10월 예약 보증금' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  description?: string;
+
+  @ApiPropertyOptional({ description: '전표 번호. 같은 번호는 한 번만 처리합니다.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  reference?: string;
 }

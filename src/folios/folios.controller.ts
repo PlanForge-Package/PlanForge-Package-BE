@@ -7,6 +7,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import {
   CreatePostingDto,
   OpenFolioDto,
+  RecordDepositDto,
   SetRoutingDto,
   TransferPostingDto,
 } from './dto/folios.dto';
@@ -34,6 +35,22 @@ export class FoliosController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.folios.openWindow(reservationId, dto, user);
+  }
+
+  /*
+   * 보증금은 창구 번호를 받지 않는다.
+   *
+   * 도착 전에는 1번 창구뿐이고, 없으면 OPERA 가 연다. 번호를 고르게 두면 아직
+   * 열리지도 않은 창구를 지정하는 실수가 생긴다.
+   */
+  @Post('deposit')
+  @ApiOperation({ summary: '보증금 수납 — 도착 전에도 폴리오에 결제로 올립니다' })
+  recordDeposit(
+    @Param('reservationId') reservationId: string,
+    @Body() dto: RecordDepositDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.folios.recordDeposit(reservationId, dto, user);
   }
 
   @Post(':window/postings')

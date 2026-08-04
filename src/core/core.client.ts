@@ -11,6 +11,8 @@ import type {
   CoreCreateBlockInput,
   CoreCreateReservationInput,
   CoreCreatePostingInput,
+  CoreDepositInput,
+  CoreReservationPolicies,
   CoreCreateRoomOutageInput,
   CoreFolio,
   CoreFolioListResponse,
@@ -416,6 +418,38 @@ export class CoreClient {
       `/v1/reservations/${encodeURIComponent(reservationId)}/cancel`,
       undefined,
       { method: 'POST', json: reason ? { reason } : {} },
+    );
+  }
+
+  // --- 취소 조건 · 보증금 · 보증 방식 ----------------------------------------
+
+  getReservationPolicies(
+    reservationId: string,
+    hotelId?: string,
+  ): Promise<CoreReservationPolicies> {
+    return this.request<CoreReservationPolicies>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/policies`,
+      { hotelId },
+    );
+  }
+
+  setGuarantee(
+    reservationId: string,
+    guaranteeCode: string,
+    hotelId?: string,
+  ): Promise<CoreReservation> {
+    return this.request<CoreReservation>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/guarantee`,
+      undefined,
+      { method: 'PUT', json: { hotelId, guaranteeCode } },
+    );
+  }
+
+  recordDeposit(reservationId: string, input: CoreDepositInput): Promise<CoreFolio> {
+    return this.request<CoreFolio>(
+      `/v1/reservations/${encodeURIComponent(reservationId)}/deposit`,
+      undefined,
+      { method: 'POST', json: input },
     );
   }
 

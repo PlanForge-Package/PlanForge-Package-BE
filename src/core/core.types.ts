@@ -48,6 +48,10 @@ export interface CoreReservation {
   sourceCode?: string;
   marketCode?: string;
   channelCode?: string;
+  /** 보증 방식 — SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP. */
+  guaranteeCode?: string;
+  /** 취소하며 물린 위약금. 취소된 예약에만 있다. */
+  cancellationPenalty?: number;
   guest?: {
     profileId?: string;
     firstName?: string;
@@ -232,6 +236,33 @@ export interface CoreTransactionCodeListResponse {
   items: CoreTransactionCode[];
 }
 
+/** 예약의 취소 조건과 보증금. 취소 전에 손님에게 알려야 하는 값이다. */
+export interface CoreReservationPolicies {
+  reservationId: string;
+  guaranteeCode: string;
+  currency: string;
+  cancellation: {
+    policyName: string;
+    freeUntil: string;
+    withinFreeWindow: boolean;
+    penaltyAmount: number;
+  };
+  deposit: {
+    requiredAmount: number;
+    dueDate?: string;
+    paidAmount: number;
+  };
+}
+
+export interface CoreDepositInput {
+  hotelId?: string;
+  amount: number;
+  description?: string;
+  transactionCode?: string;
+  /** 같은 보증금을 두 번 받지 않기 위한 전표 번호. */
+  reference?: string;
+}
+
 export interface CoreCreateTransactionCodeInput {
   hotelId?: string;
   transactionCode: string;
@@ -357,6 +388,8 @@ export interface CoreCreateReservationInput {
   sourceCode?: string;
   marketCode?: string;
   channelCode?: string;
+  /** 보증 방식. 비우면 6PM — 보증 없는 예약은 18시까지만 잡아 둔다. */
+  guaranteeCode?: string;
   guest: {
     profileId?: string;
     firstName: string;

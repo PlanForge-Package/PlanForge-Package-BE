@@ -215,6 +215,9 @@ cd deploy && docker compose up -d
 | `GET` | `/api/reservations` | 预订列表（状态 · 渠道 · 检索） |
 | `GET` | `/api/reservations/summary` | 当日抵店 · 离店 · 在住 |
 | `GET` | `/api/reservations/:id` | 单条预订（含账单） |
+| `GET` | `/api/reservations/:id/policies` | 取消条款与押金 |
+| `PUT` | `/api/reservations/:id/guarantee` | 变更担保方式 |
+| `POST` | `/api/reservations/:id/folios/deposit` | 收取押金 —— 抵店前也可入账 |
 | `POST` | `/api/reservations/:id/check-in` | 入住 —— 分房 · 开账 |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | 候补转确认（委托 OPERA） |
 | `POST` | `/api/reservations/:id/share` `\|` `/unshare` | 共享客房 · 解除共享 |

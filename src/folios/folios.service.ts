@@ -8,6 +8,7 @@ import { assertWithinScope } from '../properties/property-scope';
 import type {
   CreatePostingDto,
   OpenFolioDto,
+  RecordDepositDto,
   SetRoutingDto,
   TransferPostingDto,
 } from './dto/folios.dto';
@@ -52,6 +53,43 @@ export class FoliosService {
         this.core.openFolio(operaId, {
           hotelId: reservation.property.operaHotelId,
           ...(dto.window === undefined ? {} : { window: dto.window }),
+        }),
+    );
+
+    await this.prisma.$transaction((tx) =>
+      mirrorFolios(tx, reservationId, reservation.currency, [folio]),
+    );
+
+    return this.prisma.folio.findUnique({
+      where: { reservationId_window: { reservationId, window: folio.window } },
+      include: { postings: { orderBy: { postedAt: 'asc' } } },
+    });
+  }
+
+  /**
+   * 보증금을 받는다.
+   *
+   * 도착 전이라 청구는 없지만 그 돈은 이미 우리에게 있다. 폴리오에 결제로 올려
+   * 두지 않으면 체크인 때 손님이 두 번 내거나, 남은 돈을 돌려주지 못한다.
+   *
+   * 같은 전표 번호로 다시 들어오면 OPERA 가 막는다 — 보증금을 두 번 받으면 손님
+   * 돈이 두 번 나간다.
+   *
+   * 카드 승인은 아직 이 경로를 타지 않는다. PG 사가 정해지면 폴리오 결제와 같은
+   * 드라이버를 거치도록 맞춰야 한다.
+   */
+  async recordDeposit(reservationId: string, dto: RecordDepositDto, user: AuthUser) {
+    const { reservation, operaId } = await this.load(reservationId, user);
+
+    const folio = await this.delegate(
+      reservationId,
+      { action: 'recordDeposit', amount: dto.amount, method: dto.method },
+      () =>
+        this.core.recordDeposit(operaId, {
+          hotelId: reservation.property.operaHotelId,
+          amount: dto.amount,
+          description: dto.description?.trim() || `보증금 (${dto.method})`,
+          ...(dto.reference ? { reference: dto.reference } : {}),
         }),
     );
 

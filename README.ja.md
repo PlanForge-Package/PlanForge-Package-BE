@@ -218,6 +218,9 @@ cd deploy && docker compose up -d
 | `GET` | `/api/reservations` | 予約一覧（状態・チャネル・検索） |
 | `GET` | `/api/reservations/summary` | 当日の到着・出発・在館 |
 | `GET` | `/api/reservations/:id` | 予約単件（フォリオ含む） |
+| `GET` | `/api/reservations/:id/policies` | キャンセル条件・デポジット |
+| `PUT` | `/api/reservations/:id/guarantee` | 保証方式の変更 |
+| `POST` | `/api/reservations/:id/folios/deposit` | デポジット収納 — 到着前でも計上 |
 | `POST` | `/api/reservations/:id/check-in` | チェックイン —— 客室割当・フォリオ開設 |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | ウェイトリスト確定（OPERA へ委譲） |
 | `POST` | `/api/reservations/:id/share` `\|` `/unshare` | 客室シェア・解除 |

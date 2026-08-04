@@ -1,5 +1,10 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+
+// 미러링 자체는 folio-mirror.spec.ts 가 따로 본다.
+jest.mock('../folios/folio-mirror', () => ({
+  mirrorFolios: jest.fn().mockResolvedValue(undefined),
+}));
 import { ReservationStatus, SyncDirection, SyncStatus, UserRole } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
@@ -43,6 +48,8 @@ const OPERA_RESULT: CoreReservation = {
 function buildPrisma() {
   return {
     property: { findUnique: jest.fn().mockResolvedValue(PROPERTY) },
+    // 취소 위약금이 붙으면 폴리오를 한 트랜잭션에서 옮겨 적는다.
+    $transaction: jest.fn((cb: (client: unknown) => unknown) => cb({})),
     reservation: {
       findUnique: jest.fn(),
       // 공유 해제가 혼자 남은 상대의 표시를 푼다.
@@ -86,6 +93,23 @@ function buildCore() {
       ],
     }),
     unshareReservation: jest.fn().mockResolvedValue({ ...OPERA_RESULT, shareGroupId: undefined }),
+    getReservationPolicies: jest.fn().mockResolvedValue({
+      reservationId: 'OPERA-2001',
+      guaranteeCode: 'SIXPM',
+      currency: 'KRW',
+      cancellation: {
+        policyName: '도착 1일 전 18시까지 무료',
+        freeUntil: '2026-08-10T18:00:00.000Z',
+        withinFreeWindow: true,
+        penaltyAmount: 0,
+      },
+      deposit: { requiredAmount: 0, paidAmount: 0 },
+    }),
+    setGuarantee: jest
+      .fn()
+      .mockResolvedValue({ ...OPERA_RESULT, guaranteeCode: 'CREDITCARD' as const }),
+    // 위약금이 붙으면 폴리오를 다시 읽어 옮겨 적는다.
+    listFolios: jest.fn().mockResolvedValue({ reservationId: 'OPERA-2001', folios: [] }),
   };
 }
 
@@ -473,5 +497,83 @@ describe('BookingService — 객실 공유', () => {
     await service.unshare('res-1', HQ);
 
     expect(prisma.reservation.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('BookingService — 보증·취소 조건', () => {
+  /** 이미 OPERA 에 연결된 예약. 보증·취소 조건은 연결이 있어야 물을 수 있다. */
+  function linkedPrisma() {
+    const prisma = buildPrisma();
+    prisma.reservation.findUnique.mockResolvedValue({
+      id: 'res-1',
+      propertyId: 'prop-1',
+      operaReservationId: 'OPERA-2001',
+      property: PROPERTY,
+      currency: 'KRW',
+    });
+    return prisma;
+  }
+
+  it('취소 조건은 OPERA 에 묻는다', async () => {
+    const prisma = linkedPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    const result = await service.policies('res-1', HQ);
+
+    expect(core.getReservationPolicies).toHaveBeenCalledWith('OPERA-2001', 'SAND01');
+    expect(result.cancellation.withinFreeWindow).toBe(true);
+  });
+
+  // 화면은 로컬 id 로 다시 부른다. OPERA id 를 돌려주면 링크가 깨진다.
+  it('로컬 예약 id 를 돌려준다', async () => {
+    const prisma = linkedPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    const result = await service.policies('res-1', HQ);
+    expect(result.reservationId).toBe('res-1');
+  });
+
+  it('보증 방식을 바꾸면 사본에도 옮겨 적는다', async () => {
+    const prisma = linkedPrisma();
+    const core = buildCore();
+    const service = await buildService(prisma, core);
+
+    await service.setGuarantee('res-1', 'CREDITCARD', HQ);
+
+    expect(core.setGuarantee).toHaveBeenCalledWith('OPERA-2001', 'CREDITCARD', 'SAND01');
+    expect(prisma.reservation.upsert.mock.calls[0][0].update.guaranteeCode).toBe('CREDITCARD');
+  });
+
+  // 실패를 남기지 않으면 왜 안 바뀌었는지 나중에 알 수 없다.
+  it('보증 방식 변경 실패도 기록한다', async () => {
+    const prisma = linkedPrisma();
+    const core = buildCore();
+    core.setGuarantee.mockRejectedValue(new Error('알 수 없는 보증 방식'));
+    const service = await buildService(prisma, core);
+
+    await expect(service.setGuarantee('res-1', 'NOPE', HQ)).rejects.toThrow(/보증 방식/);
+    expect(prisma.syncLog.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
+    );
+  });
+
+  it('취소 위약금을 사본에 옮겨 적는다', async () => {
+    const prisma = linkedPrisma();
+    const core = buildCore();
+    core.cancelReservation.mockResolvedValue({
+      ...OPERA_RESULT,
+      status: 'Cancelled' as const,
+      cancellationPenalty: 120000,
+    });
+    const service = await buildService(prisma, core);
+
+    await service.cancel('res-1', { reason: '손님 요청' }, HQ);
+
+    const saved = prisma.reservation.upsert.mock.calls[0][0].update;
+    expect(saved.cancellationPenalty.toString()).toBe('120000');
+    // 옮겨 적지 않으면 우리 화면에 없는 청구가 OPERA 에만 남는다.
+    expect(core.listFolios).toHaveBeenCalledWith('OPERA-2001');
   });
 });

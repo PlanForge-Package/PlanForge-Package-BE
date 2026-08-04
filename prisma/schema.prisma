@@ -441,6 +441,17 @@ model Reservation {
   totalAmount Decimal? @db.Decimal(12, 2)
   currency    String   @default("KRW")
   notes       String?
+
+  /**
+   * 보증 방식 — SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP.
+   *
+   * 손님이 안 나타났을 때 무엇을 근거로 받을지가 여기서 갈린다. 6PM 은 18시까지만
+   * 잡아 두고 그 뒤에는 팔아도 되지만, 카드 보증은 노쇼 요금을 물릴 수 있다.
+   * OPERA 가 정하는 값이고 이 열은 사본이다.
+   */
+  guaranteeCode String?
+  /// 취소하며 물린 위약금. 취소된 예약에만 있다.
+  cancellationPenalty Decimal? @db.Decimal(12, 2)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

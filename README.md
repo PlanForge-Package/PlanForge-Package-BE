@@ -217,6 +217,9 @@ cd deploy && docker compose up -d
 | `GET` | `/api/reservations` | 예약 목록 (상태·채널·검색) |
 | `GET` | `/api/reservations/summary` | 당일 도착·출발·재실 |
 | `GET` | `/api/reservations/:id` | 예약 단건 (폴리오 포함) |
+| `GET` | `/api/reservations/:id/policies` | 취소 조건·보증금 — 취소 시 물게 될 금액 |
+| `PUT` | `/api/reservations/:id/guarantee` | 보증 방식 변경 (6PM·카드·보증금·회사·무료) |
+| `POST` | `/api/reservations/:id/folios/deposit` | 보증금 수납 — 도착 전에도 폴리오에 올립니다 |
 | `POST` | `/api/reservations/:id/check-in` | 체크인 — 객실 배정 · 폴리오 개설 |
 | `POST` | `/api/reservations/:id/confirm-waitlist` | 대기 확정 (OPERA 위임) |
 | `POST` | `/api/reservations/:id/share` `\|` `/unshare` | 객실 공유 · 해제 (OPERA 위임) |

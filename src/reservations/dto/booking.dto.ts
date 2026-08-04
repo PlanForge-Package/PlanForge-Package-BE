@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsEmail,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -97,6 +98,13 @@ export class CreateBookingDto extends CheckAvailabilityDto {
   @Transform(({ value }) => value === true || value === 'true')
   waitlist?: boolean;
 
+  /** 보증 방식. 비우면 6PM — 보증 없는 예약은 18시까지만 잡아 둔다. */
+  @ApiPropertyOptional({ description: 'SIXPM · CREDITCARD · DEPOSIT · COMPANY · COMP' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  guaranteeCode?: string;
+
   /**
    * 예약 경로.
    *
@@ -184,4 +192,15 @@ export class ShareReservationDto {
   @IsString()
   @MaxLength(60)
   withReservationId!: string;
+}
+
+/** 보증 방식. 손님이 안 나타났을 때 무엇을 근거로 받을지가 여기서 갈린다. */
+export const GUARANTEE_CODES = ['SIXPM', 'CREDITCARD', 'DEPOSIT', 'COMPANY', 'COMP'] as const;
+
+export class SetGuaranteeDto {
+  @ApiProperty({ enum: GUARANTEE_CODES })
+  @IsIn(GUARANTEE_CODES as unknown as string[], {
+    message: `보증 방식은 ${GUARANTEE_CODES.join(', ')} 중 하나여야 합니다.`,
+  })
+  guaranteeCode!: string;
 }

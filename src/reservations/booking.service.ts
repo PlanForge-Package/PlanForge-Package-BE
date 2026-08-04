@@ -10,6 +10,7 @@ import {
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 import type { CoreReservation } from '../core/core.types';
+import { mirrorFolios } from '../folios/folio-mirror';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly, toReservationStatus } from '../sync/reservation.mapper';
@@ -93,6 +94,7 @@ export class BookingService {
         sourceCode: dto.sourceCode,
         marketCode: dto.marketCode,
         channelCode: dto.channelCode,
+        guaranteeCode: dto.guaranteeCode,
         guest: {
           ...dto.guest,
           profileId: dto.guest.profileId ?? (await this.knownProfileId(dto.guest.email)),
@@ -141,7 +143,62 @@ export class BookingService {
         dto.reason,
       );
       const mirrored = await this.mirror(property, cancelled, dto.reason);
+
+      /*
+       * 위약금이 붙었으면 폴리오를 다시 읽는다.
+       *
+       * OPERA 는 취소하며 폴리오에 청구를 단다. 옮겨 적지 않으면 우리 화면에는
+       * 없는 청구가 저쪽에만 남아, 받을 돈이 있는 줄도 모르게 된다.
+       */
+      if (cancelled.cancellationPenalty && cancelled.cancellationPenalty > 0) {
+        const folios = await this.core.listFolios(cancelled.reservationId);
+        await this.prisma.$transaction((tx) =>
+          mirrorFolios(tx, mirrored.id, mirrored.currency, folios.folios),
+        );
+      }
+
       await this.finishLog(log.id, SyncStatus.SUCCESS, cancelled.reservationId);
+      return mirrored;
+    } catch (error) {
+      await this.finishLog(log.id, SyncStatus.FAILED, reservation.operaReservationId, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 취소 조건과 보증금.
+   *
+   * 취소하기 전에 손님에게 알려야 하는 값이다. 물리고 나서 통보하면 그건 통보가
+   * 아니라 사후 정산이다. 계산은 OPERA 가 한다 — 규정이 요금에 붙어 있고, 우리가
+   * 따로 계산하면 실제로 물리는 금액과 갈린다.
+   */
+  async policies(id: string, user: AuthUser) {
+    const { reservation, property } = await this.loadLinked(id, user);
+    const result = await this.core.getReservationPolicies(
+      reservation.operaReservationId!,
+      property.operaHotelId,
+    );
+    // 화면은 로컬 id 로 다시 부르므로 그쪽을 남긴다.
+    return { ...result, reservationId: reservation.id };
+  }
+
+  /** 보증 방식 변경. 노쇼를 어떻게 다룰지가 여기서 갈린다. */
+  async setGuarantee(id: string, guaranteeCode: string, user: AuthUser): Promise<Reservation> {
+    const { reservation, property } = await this.loadLinked(id, user);
+
+    const log = await this.startLog('Reservation', reservation.operaReservationId, {
+      action: 'set-guarantee',
+      guaranteeCode,
+    });
+
+    try {
+      const updated = await this.core.setGuarantee(
+        reservation.operaReservationId!,
+        guaranteeCode,
+        property.operaHotelId,
+      );
+      const mirrored = await this.mirror(property, updated);
+      await this.finishLog(log.id, SyncStatus.SUCCESS, updated.reservationId);
       return mirrored;
     } catch (error) {
       await this.finishLog(log.id, SyncStatus.FAILED, reservation.operaReservationId, error);
@@ -212,6 +269,11 @@ export class BookingService {
       channelCode: source.channelCode ?? null,
       totalAmount: source.totalAmount === undefined ? null : new Prisma.Decimal(source.totalAmount),
       currency: source.currency ?? property.currency,
+      guaranteeCode: source.guaranteeCode ?? null,
+      cancellationPenalty:
+        source.cancellationPenalty === undefined
+          ? null
+          : new Prisma.Decimal(source.cancellationPenalty),
       ...(cancellationNote ? { notes: cancellationNote } : {}),
     };
 
