@@ -301,6 +301,7 @@ internal network with no published ports.
 | `GET` `POST` | `/api/rates/packages` | Packages · create (MANAGER) |
 | `PATCH` | `/api/rates/packages/:packageCode` | Update a package (MANAGER) |
 | `GET` | `/api/reports/daily` | Occupancy · ADR · RevPAR · channel breakdown (MANAGER) |
+| `GET` | `/api/reports/journal` | Closing journal — revenue by code, tax, payment reconciliation (MANAGER) |
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS outlet management (MANAGER) |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | Room charge (outlet key) |
 | `POST` `GET` | `/api/sync/reservations` `\|` `/api/sync/logs` | OPERA sync · history |

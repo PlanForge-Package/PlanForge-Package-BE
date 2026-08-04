@@ -101,6 +101,34 @@ describe('folio-mirror', () => {
     expect(update).not.toHaveProperty('paymentId');
   });
 
+  /*
+   * 일부만 갱신하면 사본이 OPERA 와 다른 값을 들고 있게 된다. 거래 코드가 예전
+   * 것으로 남으면 그 금액이 마감에서 엉뚱한 매출로 분개된다.
+   */
+  it('갱신에서 거래 코드와 종류까지 다시 쓴다', async () => {
+    const tx = buildTx();
+    await mirrorFolios(tx as never, 'res-1', 'KRW', [
+      folio({
+        postings: [
+          {
+            postingId: 'PST-801',
+            type: 'Payment',
+            transactionCode: '5000',
+            description: '현금',
+            amount: -100000,
+            currencyCode: 'KRW',
+            postedAt: '2026-08-04T01:00:00.000Z',
+          },
+        ],
+      }),
+    ]);
+
+    const update = tx.posting.upsert.mock.calls[0][0].update;
+    expect(update.transactionCode).toBe('5000');
+    expect(update.type).toBe('PAYMENT');
+    expect(update.amount.toString()).toBe('-100000');
+  });
+
   it('이관되면 소속 창구와 출처를 갱신한다', async () => {
     const tx = buildTx();
     await mirrorFolios(tx as never, 'res-1', 'KRW', [

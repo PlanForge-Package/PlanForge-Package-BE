@@ -299,6 +299,7 @@ cd deploy && docker compose up -d
 | `GET` `POST` | `/api/rates/packages` | 패키지 목록 · 등록 (MANAGER) |
 | `PATCH` | `/api/rates/packages/:packageCode` | 패키지 수정 (MANAGER) |
 | `GET` | `/api/reports/daily` | 점유율·ADR·RevPAR·채널별 분해 (MANAGER) |
+| `GET` | `/api/reports/journal` | 마감 분개 — 거래 코드별 매출·세금과 수납 대사 (MANAGER) |
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS 아웃렛 관리 (MANAGER) |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | 룸차지 (아웃렛 키) |
 | `POST` `GET` | `/api/sync/reservations` `\|` `/api/sync/logs` | OPERA 동기화 · 이력 |

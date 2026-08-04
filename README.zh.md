@@ -297,6 +297,7 @@ cd deploy && docker compose up -d
 | `GET` `POST` | `/api/rates/packages` | 套餐列表 · 新建（MANAGER）|
 | `PATCH` | `/api/rates/packages/:packageCode` | 修改套餐（MANAGER）|
 | `GET` | `/api/reports/daily` | 出租率 · ADR · RevPAR · 渠道拆解（MANAGER） |
+| `GET` | `/api/reports/journal` | 结账分录 —— 按交易代码的营收与税额、收款对账（MANAGER）|
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS 门店管理（MANAGER） |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | 挂房账（门店密钥） |
 | `POST` `GET` | `/api/sync/reservations` `\|` `/api/sync/logs` | OPERA 同步 · 记录 |

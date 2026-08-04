@@ -17,6 +17,10 @@ import type {
   CoreCreatePackageInput,
   CoreCreateRatePlanInput,
   CoreCreateSeasonInput,
+  CoreCreateTransactionCodeInput,
+  CoreTransactionCode,
+  CoreTransactionCodeListResponse,
+  CoreUpdateTransactionCodeInput,
   CorePackage,
   CorePackageListResponse,
   CoreProfile,
@@ -122,6 +126,36 @@ export class CoreClient {
       `/v1/rate-plans/${encodeURIComponent(ratePlanCode)}/seasons/${encodeURIComponent(seasonId)}`,
       undefined,
       { method: 'DELETE', json: { hotelId } },
+    );
+  }
+
+  // --- 거래 코드 ------------------------------------------------------------
+
+  listTransactionCodes(
+    hotelId?: string,
+    includeInactive?: boolean,
+  ): Promise<CoreTransactionCodeListResponse> {
+    return this.request<CoreTransactionCodeListResponse>('/v1/transaction-codes', {
+      hotelId,
+      includeInactive,
+    });
+  }
+
+  createTransactionCode(input: CoreCreateTransactionCodeInput): Promise<CoreTransactionCode> {
+    return this.request<CoreTransactionCode>('/v1/transaction-codes', undefined, {
+      method: 'POST',
+      json: input,
+    });
+  }
+
+  updateTransactionCode(
+    transactionCode: string,
+    input: CoreUpdateTransactionCodeInput,
+  ): Promise<CoreTransactionCode> {
+    return this.request<CoreTransactionCode>(
+      `/v1/transaction-codes/${encodeURIComponent(transactionCode)}`,
+      undefined,
+      { method: 'PATCH', json: input },
     );
   }
 

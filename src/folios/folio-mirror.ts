@@ -74,11 +74,22 @@ export async function mirrorFolios(
     for (const posting of folio.postings) {
       const local = await tx.posting.upsert({
         where: { operaPostingId: posting.postingId },
+        /*
+         * 온 값을 전부 옮겨 적는다.
+         *
+         * 일부만 갱신하면 사본이 OPERA 와 다른 값을 들고 있게 된다 — 거래 코드가
+         * 예전 것으로 남으면 그 금액이 마감에서 엉뚱한 매출로 분개된다. 이 행은
+         * 우리가 만든 기록이 아니라 저쪽 기록의 사본이다.
+         */
         update: {
-          // 이관하면 소속 창구가 바뀐다. 금액·적요는 OPERA 가 고칠 수 있다.
           folioId: saved.id,
+          type: FROM_OPERA_TYPE[posting.type] ?? PostingType.CHARGE,
+          transactionCode: posting.transactionCode,
           amount: new Prisma.Decimal(posting.amount),
           description: posting.description,
+          currency: posting.currencyCode || folio.currencyCode || currency,
+          ...(posting.postedAt ? { postedAt: new Date(posting.postedAt) } : {}),
+          reference: posting.reference ?? null,
           transferredFromWindow: posting.transferredFromWindow ?? null,
         },
         create: {

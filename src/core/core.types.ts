@@ -214,6 +214,44 @@ export interface CoreCreatePackageInput {
   includedInRate?: boolean;
 }
 
+export interface CoreTransactionCode {
+  transactionCode: string;
+  hotelId: string;
+  name: string;
+  /** Room = 객실, FoodBeverage = 식음, Other = 기타, Payment = 결제. */
+  group: string;
+  vatRate: number;
+  serviceChargeRate: number;
+  /** 표시가격에 세금이 포함되어 있으면 true. */
+  taxInclusive: boolean;
+  active: boolean;
+}
+
+export interface CoreTransactionCodeListResponse {
+  hotelId: string;
+  items: CoreTransactionCode[];
+}
+
+export interface CoreCreateTransactionCodeInput {
+  hotelId?: string;
+  transactionCode: string;
+  name: string;
+  group: 'Room' | 'FoodBeverage' | 'Other' | 'Payment';
+  vatRate?: number;
+  serviceChargeRate?: number;
+  taxInclusive?: boolean;
+}
+
+export interface CoreUpdateTransactionCodeInput {
+  hotelId?: string;
+  name?: string;
+  group?: 'Room' | 'FoodBeverage' | 'Other' | 'Payment';
+  vatRate?: number;
+  serviceChargeRate?: number;
+  taxInclusive?: boolean;
+  active?: boolean;
+}
+
 export interface CoreUpdatePackageInput {
   hotelId?: string;
   name?: string;

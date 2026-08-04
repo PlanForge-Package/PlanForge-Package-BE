@@ -300,6 +300,7 @@ cd deploy && docker compose up -d
 | `GET` `POST` | `/api/rates/packages` | パッケージ一覧・登録 (MANAGER) |
 | `PATCH` | `/api/rates/packages/:packageCode` | パッケージ修正 (MANAGER) |
 | `GET` | `/api/reports/daily` | 稼働率・ADR・RevPAR・チャネル別内訳（MANAGER） |
+| `GET` | `/api/reports/journal` | 締め仕訳 — 取引コード別の売上・税額と収納照合 (MANAGER) |
 | `GET` `POST` `PATCH` | `/api/pos-outlets` | POS アウトレット管理（MANAGER） |
 | `GET` `POST` | `/api/pos/rooms` `\|` `/api/pos/charges[/void]` | ルームチャージ（アウトレットキー） |
 | `POST` `GET` | `/api/sync/reservations` `\|` `/api/sync/logs` | OPERA 同期・履歴 |
