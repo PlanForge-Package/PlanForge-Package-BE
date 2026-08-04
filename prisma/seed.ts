@@ -7,15 +7,7 @@
  * 여러 번 돌려도 결과가 같도록 모두 upsert 로 작성했다.
  */
 
-import {
-  FolioStatus,
-  PostingType,
-  PrismaClient,
-  ProfileType,
-  ReservationStatus,
-  RoomStatus,
-  UserRole,
-} from '@prisma/client';
+import { PrismaClient, ProfileType, ReservationStatus, RoomStatus, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -100,7 +92,7 @@ const GUESTS = [
  * 못한다. OTA·자사·프런트가 섞여 있어야 의존도와 ADR 차이가 눈에 보인다.
  */
 const RESERVATIONS = [
-  // 재실 — 객실 배정 + 폴리오 개설까지 되어 있어 체크아웃을 바로 시험할 수 있다.
+  // 재실 — 객실이 배정된 상태. 목록·객실 화면의 재실 표기를 확인할 수 있다.
   {
     conf: 'PF-000001',
     guest: 'PRF-0001',
@@ -312,66 +304,48 @@ async function main(): Promise<void> {
       channelCode: r.channel,
     };
 
+    /*
+     * OPERA 번호를 붙이지 않는다.
+     *
+     * 여기서 지어낸 번호는 OPERA 에 없다. 예약·폴리오·체크인이 모두 OPERA 에
+     * 위임된 뒤로는, 있지도 않은 번호를 달아 두면 그 예약으로 무엇을 하든
+     * "예약을 찾을 수 없습니다" 로 막히고 원인을 찾기 어렵다.
+     *
+     * 이 예약들은 목록·검색·실적 화면을 채우기 위한 로컬 표본이다. 연동된
+     * 예약이 필요하면 화면에서 새로 만들거나 `POST /api/sync/reservations` 로
+     * OPERA 에서 가져온다.
+     */
     const reservation = await prisma.reservation.upsert({
       where: { confirmationNumber: r.conf },
-      update: data,
-      create: { ...data, confirmationNumber: r.conf, operaReservationId: `OPERA-${r.conf}` },
+      // 이전 시드가 지어내 둔 번호도 지운다. 남겨 두면 이미 만들어진 개발
+      // DB 에서는 계속 "예약을 찾을 수 없습니다" 로 막힌다.
+      update: { ...data, operaReservationId: null },
+      create: { ...data, confirmationNumber: r.conf },
     });
 
-    // 재실 예약은 객실을 점유 상태로 맞추고 잔액이 있는 폴리오를 붙인다.
+    /*
+     * 이 예약에 붙어 있던 폴리오는 지운다.
+     *
+     * 여러 번 돌려도 결과가 같아야 한다. 이전 시드가 만들어 둔 계산서나 앞선
+     * 시험이 남긴 창구가 남아 있으면 OPERA 에 없는 잔액이 계속 화면에 뜬다.
+     */
+    await prisma.folio.deleteMany({ where: { reservationId: reservation.id } });
+
+    // 재실 예약은 객실을 점유 상태로 맞춘다.
     if (r.status === ReservationStatus.IN_HOUSE && r.room) {
       await prisma.room.update({
         where: { propertyId_number: { propertyId: property.id, number: r.room } },
         data: { occupied: true },
       });
 
-      // 마감 상태로 남아 있으면 다시 열어 준다 — 이전 실행에서 체크아웃까지
-      // 시험했다면 폴리오가 CLOSED 로 남아 거래 등록이 막힌다.
-      const folio = await prisma.folio.upsert({
-        where: { reservationId_window: { reservationId: reservation.id, window: 1 } },
-        update: { status: FolioStatus.OPEN },
-        create: { reservationId: reservation.id, window: 1, currency: 'KRW' },
-      });
-
-      // 거래는 매번 갈아 끼운다. 남겨 두고 건너뛰면 이전 실행에서 등록한 결제가
-      // 그대로 남아 잔액이 0 이 되고, 체크아웃 차단을 시험할 수 없다.
-      await prisma.posting.deleteMany({ where: { folioId: folio.id } });
-      await prisma.posting.createMany({
-        data: [
-          {
-            folioId: folio.id,
-            type: PostingType.CHARGE,
-            transactionCode: '1000',
-            description: '객실료',
-            amount: '400000',
-          },
-          {
-            folioId: folio.id,
-            type: PostingType.TAX,
-            transactionCode: '9000',
-            description: '부가세',
-            amount: '40000',
-          },
-          {
-            folioId: folio.id,
-            type: PostingType.PAYMENT,
-            transactionCode: '5000',
-            description: '카드 선결제',
-            amount: '-340000',
-          },
-        ],
-      });
-
-      // 잔액은 거래 합계로 세운다 (BE 와 같은 규칙). 100,000 이 남아 체크아웃
-      // 차단 로직을 바로 시험할 수 있다.
-      const totals = await prisma.posting.aggregate({
-        where: { folioId: folio.id },
-        _sum: { amount: true },
-      });
-      await prisma.folio.update({
-        where: { id: folio.id },
-        data: { balance: totals._sum.amount ?? 0 },
-      });
+      /*
+       * 폴리오는 새로 만들지 않는다.
+       *
+       * 회계 원장은 OPERA 가 원천이고 로컬 행은 그 사본이다. 여기서 잔액과
+       * 거래를 지어내면 OPERA 에 없는 계산서가 화면에 뜨고, 실제로 요금을
+       * 달려는 순간 사본과 원장이 갈린다. 잔액이 남은 폴리오를 시험하려면
+       * 화면에서 예약을 만들어 체크인한 뒤 요금을 달아 주세요.
+       */
     }
   }
 
@@ -383,6 +357,11 @@ async function main(): Promise<void> {
     reservations: await prisma.reservation.count(),
   };
   console.log('시드 완료:', counts);
+  console.log('시드 예약은 OPERA 에 연결되지 않은 로컬 표본입니다.');
+  console.log(
+    '  체크인·요금·결제까지 시험하려면 화면에서 새 예약을 만들거나' +
+      ' POST /api/sync/reservations 로 OPERA 에서 가져와 주세요.',
+  );
   console.log(`계정 비밀번호: ${seedPassword} (SEED_PASSWORD 로 변경 가능)`);
   for (const user of USERS) {
     console.log(`  ${user.role.padEnd(12)} ${user.email}`);
