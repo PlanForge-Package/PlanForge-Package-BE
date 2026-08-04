@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ArInvoiceStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsEnum,
   IsInt,
   IsOptional,
@@ -11,6 +12,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -141,6 +143,18 @@ export class TransferToArDto {
 }
 
 /** 거래처 입금. */
+export class AllocationInputDto {
+  @ApiProperty({ description: '붙일 청구서' })
+  @IsString()
+  @MinLength(1)
+  invoiceId!: string;
+
+  @ApiProperty({ description: '이 청구서에 붙일 금액 (양수)' })
+  @Type(() => Number)
+  @IsPositive()
+  amount!: number;
+}
+
 export class RecordArPaymentDto {
   @ApiProperty({ description: '입금액 (양수)' })
   @Type(() => Number)
@@ -152,6 +166,36 @@ export class RecordArPaymentDto {
   @MinLength(1)
   @MaxLength(200)
   description!: string;
+
+  /**
+   * 어느 청구서에 얼마씩 붙일지.
+   *
+   * 비우고 `autoApply` 를 켜면 만기가 빠른 청구서부터 채운다. 둘 다 없으면
+   * 배분하지 않고 잔액만 줄인다 — 나중에 사람이 붙일 수 있다.
+   */
+  @ApiPropertyOptional({ type: [AllocationInputDto] })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @ArrayMaxSize(50)
+  @Type(() => AllocationInputDto)
+  allocations?: AllocationInputDto[];
+
+  @ApiPropertyOptional({ description: '만기가 빠른 청구서부터 자동으로 채웁니다.' })
+  @IsOptional()
+  @IsString()
+  autoApply?: string;
+}
+
+export class AgingDto {
+  @ApiPropertyOptional({ description: 'PlanForge Property ID' })
+  @IsOptional()
+  @IsString()
+  propertyId?: string;
+
+  @ApiPropertyOptional({ description: '기준일 (YYYY-MM-DD). 비우면 오늘입니다.' })
+  @IsOptional()
+  @Matches(DATE_ONLY, { message: 'asOf 는 YYYY-MM-DD 형식이어야 합니다.' })
+  asOf?: string;
 }
 
 export class CreateInvoiceDto {

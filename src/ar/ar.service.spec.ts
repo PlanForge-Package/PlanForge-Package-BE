@@ -67,6 +67,9 @@ function buildPrisma(overrides: Record<string, unknown> = {}) {
       create: jest.fn().mockImplementation(({ data }) => ({ id: 'inv-1', ...data })),
       update: jest.fn().mockImplementation(({ data }) => ({ id: 'inv-1', ...data })),
     },
+    arAllocation: {
+      create: jest.fn().mockImplementation(({ data }) => ({ id: 'alloc-1', ...data })),
+    },
   };
 
   return {
@@ -338,9 +341,24 @@ describe('ArService — 입금', () => {
 
     await service.recordPayment('acc-1', { amount: 50000, description: '10월분' }, ACTOR);
 
-    const created = prisma.arTransaction.create.mock.calls[0][0].data;
+    // 입금과 배분은 한 트랜잭션에서 함께 쓴다. 하나만 남으면 장부가 어긋난다.
+    const created = prisma.tx.arTransaction.create.mock.calls[0][0].data;
     expect(created.amount.toString()).toBe('-50000');
     expect(created.type).toBe(ArTransactionType.PAYMENT);
+  });
+
+  it('배분하지 않으면 남은 금액이 그대로다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    const result = await service.recordPayment(
+      'acc-1',
+      { amount: 50000, description: '10월분' },
+      ACTOR,
+    );
+
+    expect(result.unapplied).toBe('50000.00');
+    expect(prisma.tx.arAllocation.create).not.toHaveBeenCalled();
   });
 
   // 입금을 미청구로 세면 다음 달 청구서가 지난달 입금만큼 깎인다.
@@ -513,5 +531,310 @@ describe('ArService — 청구서', () => {
     await expect(
       service.updateInvoiceStatus('nope', { status: ArInvoiceStatus.SENT }, ACTOR),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+/** 열린 청구서. 만기가 빠른 것이 앞이다. */
+function openInvoice(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'inv-1',
+    accountId: 'acc-1',
+    propertyId: 'prop-1',
+    number: 'INV-2026-0001',
+    status: ArInvoiceStatus.SENT,
+    total: new Prisma.Decimal(100000),
+    dueDate: new Date('2026-07-01T00:00:00.000Z'),
+    issuedAt: new Date('2026-06-01T00:00:00.000Z'),
+    allocations: [] as Array<{ amount: Prisma.Decimal }>,
+    ...overrides,
+  };
+}
+
+describe('ArService — 부분 수금', () => {
+  it('지정한 청구서에 붙인다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: { findMany: jest.fn().mockResolvedValue([openInvoice()]) },
+    });
+    const service = await buildService(prisma);
+
+    const result = await service.recordPayment(
+      'acc-1',
+      {
+        amount: 40000,
+        description: '일부 입금',
+        allocations: [{ invoiceId: 'inv-1', amount: 40000 }],
+      },
+      ACTOR,
+    );
+
+    const created = prisma.tx.arAllocation.create.mock.calls[0][0].data;
+    expect(created.invoiceId).toBe('inv-1');
+    expect(created.amount.toString()).toBe('40000');
+    expect(result.unapplied).toBe('0.00');
+  });
+
+  // 다 받지 않았는데 수금으로 넘기면 남은 금액을 독촉하지 않게 된다.
+  it('일부만 받으면 청구서를 수금으로 넘기지 않는다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: { findMany: jest.fn().mockResolvedValue([openInvoice()]) },
+    });
+    const service = await buildService(prisma);
+
+    await service.recordPayment(
+      'acc-1',
+      { amount: 40000, description: '일부', allocations: [{ invoiceId: 'inv-1', amount: 40000 }] },
+      ACTOR,
+    );
+
+    expect(prisma.tx.arInvoice.update).not.toHaveBeenCalled();
+  });
+
+  it('다 받으면 수금으로 넘긴다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            openInvoice({ allocations: [{ amount: new Prisma.Decimal(60000) }] }),
+          ]),
+      },
+    });
+    const service = await buildService(prisma);
+
+    await service.recordPayment(
+      'acc-1',
+      { amount: 40000, description: '잔금', allocations: [{ invoiceId: 'inv-1', amount: 40000 }] },
+      ACTOR,
+    );
+
+    const update = prisma.tx.arInvoice.update.mock.calls[0][0];
+    expect(update.where.id).toBe('inv-1');
+    expect(update.data.status).toBe(ArInvoiceStatus.PAID);
+  });
+
+  // 남은 금액보다 많이 붙이면 받지 않은 돈으로 청구서를 지우는 것이 된다.
+  it('남은 금액보다 많이 붙이지 못한다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: { findMany: jest.fn().mockResolvedValue([openInvoice()]) },
+    });
+    const service = await buildService(prisma);
+
+    await expect(
+      service.recordPayment(
+        'acc-1',
+        { amount: 200000, description: 'x', allocations: [{ invoiceId: 'inv-1', amount: 150000 }] },
+        ACTOR,
+      ),
+    ).rejects.toThrow(/남은 금액보다 많이/);
+  });
+
+  it('입금액보다 많이 배분하지 못한다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([openInvoice(), openInvoice({ id: 'inv-2', number: 'INV-2' })]),
+      },
+    });
+    const service = await buildService(prisma);
+
+    await expect(
+      service.recordPayment(
+        'acc-1',
+        {
+          amount: 50000,
+          description: 'x',
+          allocations: [
+            { invoiceId: 'inv-1', amount: 30000 },
+            { invoiceId: 'inv-2', amount: 30000 },
+          ],
+        },
+        ACTOR,
+      ),
+    ).rejects.toThrow(/입금액보다 많이/);
+  });
+
+  it('다른 거래처의 청구서에는 붙이지 못한다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: { findMany: jest.fn().mockResolvedValue([openInvoice()]) },
+    });
+    const service = await buildService(prisma);
+
+    await expect(
+      service.recordPayment(
+        'acc-1',
+        { amount: 10000, description: 'x', allocations: [{ invoiceId: 'other', amount: 10000 }] },
+        ACTOR,
+      ),
+    ).rejects.toThrow(/이 거래처의 청구서가 아니거나/);
+  });
+
+  it('같은 청구서를 두 번 지정하면 거절한다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: { findMany: jest.fn().mockResolvedValue([openInvoice()]) },
+    });
+    const service = await buildService(prisma);
+
+    await expect(
+      service.recordPayment(
+        'acc-1',
+        {
+          amount: 20000,
+          description: 'x',
+          allocations: [
+            { invoiceId: 'inv-1', amount: 10000 },
+            { invoiceId: 'inv-1', amount: 10000 },
+          ],
+        },
+        ACTOR,
+      ),
+    ).rejects.toThrow(/두 번 지정/);
+  });
+
+  // 오래 묵은 미수부터 정리하는 것이 보통이다.
+  it('자동 배분은 만기가 빠른 청구서부터 채운다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            openInvoice({ id: 'inv-old', total: new Prisma.Decimal(50000) }),
+            openInvoice({ id: 'inv-new', total: new Prisma.Decimal(80000) }),
+          ]),
+      },
+    });
+    const service = await buildService(prisma);
+
+    const result = await service.recordPayment(
+      'acc-1',
+      { amount: 70000, description: '묶음 입금', autoApply: 'true' },
+      ACTOR,
+    );
+
+    expect(result.allocations).toEqual([
+      { invoiceId: 'inv-old', amount: '50000.00' },
+      { invoiceId: 'inv-new', amount: '20000.00' },
+    ]);
+    expect(result.unapplied).toBe('0.00');
+  });
+
+  it('자동 배분에서 남은 돈은 배분하지 않는다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: {
+        findMany: jest.fn().mockResolvedValue([openInvoice({ total: new Prisma.Decimal(30000) })]),
+      },
+    });
+    const service = await buildService(prisma);
+
+    const result = await service.recordPayment(
+      'acc-1',
+      { amount: 50000, description: '과입금', autoApply: 'true' },
+      ACTOR,
+    );
+
+    expect(result.unapplied).toBe('20000.00');
+  });
+
+  it('자동과 직접 배분을 함께 쓰면 거절한다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    await expect(
+      service.recordPayment(
+        'acc-1',
+        {
+          amount: 10000,
+          description: 'x',
+          autoApply: 'true',
+          allocations: [{ invoiceId: 'inv-1', amount: 10000 }],
+        },
+        ACTOR,
+      ),
+    ).rejects.toThrow(/함께 쓸 수 없습니다/);
+  });
+});
+
+describe('ArService — 연체', () => {
+  function agingInvoice(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'inv-1',
+      accountId: 'acc-1',
+      number: 'INV-1',
+      status: ArInvoiceStatus.SENT,
+      total: new Prisma.Decimal(100000),
+      dueDate: new Date('2026-07-01T00:00:00.000Z'),
+      account: { id: 'acc-1', code: 'SPACEPL', name: '스페이스', billingEmail: null },
+      allocations: [] as Array<{ amount: Prisma.Decimal }>,
+      ...overrides,
+    };
+  }
+
+  it('경과 일수로 구간을 나눈다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            agingInvoice({ id: 'a', dueDate: new Date('2026-08-10T00:00:00.000Z') }),
+            agingInvoice({ id: 'b', dueDate: new Date('2026-07-20T00:00:00.000Z') }),
+            agingInvoice({ id: 'c', dueDate: new Date('2026-05-01T00:00:00.000Z') }),
+          ]),
+      },
+    });
+    const service = await buildService(prisma);
+
+    const result = await service.aging({ asOf: '2026-08-04' }, ACTOR);
+    const row = result.items[0];
+
+    // 8/10 만기는 아직 아니고, 7/20 은 15일, 5/1 은 95일 지났다.
+    expect(row?.buckets.current).toBe('100000.00');
+    expect(row?.buckets.days30).toBe('100000.00');
+    expect(row?.buckets.over90).toBe('100000.00');
+    expect(row?.overdue).toBe('200000.00');
+    expect(row?.total).toBe('300000.00');
+  });
+
+  it('받은 만큼 뺀 금액으로 센다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            agingInvoice({ allocations: [{ amount: new Prisma.Decimal(70000) }] }),
+          ]),
+      },
+    });
+    const service = await buildService(prisma);
+
+    const result = await service.aging({ asOf: '2026-08-04' }, ACTOR);
+    expect(result.items[0]?.total).toBe('30000.00');
+  });
+
+  // 상태가 늦게 따라오는 청구서까지 독촉하면 이미 받은 돈을 다시 달라고 하게 된다.
+  it('남은 금액이 없으면 빼고 센다', async () => {
+    const prisma = buildPrisma({
+      arInvoice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            agingInvoice({ allocations: [{ amount: new Prisma.Decimal(100000) }] }),
+          ]),
+      },
+    });
+    const service = await buildService(prisma);
+
+    const result = await service.aging({ asOf: '2026-08-04' }, ACTOR);
+    expect(result.items).toHaveLength(0);
+    expect(result.totals.total).toBe('0.00');
+  });
+
+  it('수금·무효 청구서는 조회하지 않는다', async () => {
+    const prisma = buildPrisma();
+    const service = await buildService(prisma);
+
+    await service.aging({}, ACTOR);
+
+    const where = prisma.arInvoice.findMany.mock.calls[0][0].where;
+    expect(where.status.notIn).toEqual([ArInvoiceStatus.PAID, ArInvoiceStatus.VOID]);
   });
 });

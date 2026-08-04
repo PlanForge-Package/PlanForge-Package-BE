@@ -55,6 +55,7 @@ model User {
   completedTraces     ReservationTrace[] @relation("TraceCompletedBy")
   arTransactions      ArTransaction[]
   arInvoices          ArInvoice[]
+  arAllocations       ArAllocation[]
 
   @@index([propertyId])
   @@map("users")
@@ -892,6 +893,8 @@ model ArTransaction {
   invoice     ArInvoice?   @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
   createdBy   User?        @relation(fields: [createdById], references: [id])
+  /// 이 입금이 어느 청구서에 얼마씩 붙었는지. 청구는 여기에 등장하지 않는다.
+  allocations ArAllocation[]
 
   @@index([accountId, postedAt])
   @@index([invoiceId])
@@ -928,11 +931,42 @@ model ArInvoice {
   property     Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   account      ArAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
   transactions ArTransaction[]
+  allocations  ArAllocation[]
   createdBy    User?           @relation(fields: [createdById], references: [id])
 
   @@unique([propertyId, number])
   @@index([accountId, status])
   @@map("ar_invoices")
+}
+
+/**
+ * 입금을 청구서에 붙인 기록.
+ *
+ * 거래처는 청구서 한 장을 나눠 내기도 하고, 한 번에 여러 장을 묶어 내기도 한다.
+ * 입금 총액만 들고 있으면 "이 청구서가 얼마 남았는지" 를 말할 수 없어, 독촉할
+ * 대상과 금액을 정할 수 없다.
+ *
+ * 배분은 입금과 청구서의 교차점이므로 둘 다 지워지면 함께 사라진다.
+ */
+model ArAllocation {
+  id        String @id @default(cuid())
+  invoiceId String
+  /// 붙인 입금 거래. 언제나 PAYMENT 다.
+  paymentId String
+
+  amount Decimal @db.Decimal(12, 2)
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  invoice   ArInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment   ArTransaction @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  createdBy User?         @relation(fields: [createdById], references: [id])
+
+  /// 같은 입금을 같은 청구서에 두 번 붙이면 그만큼 덜 받은 것이 된다.
+  @@unique([invoiceId, paymentId])
+  @@index([paymentId])
+  @@map("ar_allocations")
 }
 
 // ---------------------------------------------------------------------------

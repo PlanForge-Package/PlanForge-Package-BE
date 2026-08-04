@@ -17,6 +17,7 @@ import { mirrorFolios } from '../folios/folio-mirror';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import type {
+  AgingDto,
   CreateAccountDto,
   CreateInvoiceDto,
   ListAccountsDto,
@@ -153,6 +154,7 @@ export class ArService {
       }),
       this.prisma.arInvoice.findMany({
         where: { accountId: id },
+        include: { allocations: { select: { amount: true } } },
         orderBy: { issuedAt: 'desc' },
         take: 50,
       }),
@@ -160,7 +162,33 @@ export class ArService {
       this.unbilledTotal(id),
     ]);
 
-    return { account, balance, unbilled, transactions, invoices };
+    const today = new Date().toISOString().slice(0, 10);
+
+    return {
+      account,
+      balance,
+      unbilled,
+      transactions,
+      // 청구서마다 얼마를 받았고 얼마가 남았는지. 총액만으로는 독촉할 대상을 못 정한다.
+      invoices: invoices.map((invoice) => {
+        const paid = invoice.allocations.reduce(
+          (sum, row) => sum.add(row.amount),
+          new Prisma.Decimal(0),
+        );
+        const outstanding = invoice.total.sub(paid);
+        const dueDate = invoice.dueDate.toISOString().slice(0, 10);
+        return {
+          ...invoice,
+          paid: paid.toFixed(2),
+          outstanding: outstanding.toFixed(2),
+          overdue:
+            invoice.status !== ArInvoiceStatus.PAID &&
+            invoice.status !== ArInvoiceStatus.VOID &&
+            outstanding.greaterThan(0) &&
+            dueDate < today,
+        };
+      }),
+    };
   }
 
   // --- 폴리오 → 거래처 -----------------------------------------------------
@@ -267,20 +295,278 @@ export class ArService {
     });
   }
 
-  /** 거래처 입금. 잔액에서 뺀다. */
+  /**
+   * 거래처 입금. 잔액에서 뺀다.
+   *
+   * 거래처는 청구서 한 장을 나눠 내기도 하고 여러 장을 묶어 내기도 한다. 어느
+   * 청구서에 얼마가 붙었는지 남겨 두지 않으면 무엇을 독촉해야 하는지 알 수 없어,
+   * 이미 받은 돈을 다시 달라고 하게 된다.
+   */
   async recordPayment(accountId: string, dto: RecordArPaymentDto, user: AuthUser) {
     const account = await this.loadAccount(accountId, user);
+    const amount = new Prisma.Decimal(dto.amount);
 
-    return this.prisma.arTransaction.create({
-      data: {
-        accountId: account.id,
-        type: ArTransactionType.PAYMENT,
-        // 입금은 음수로 올라간다. 잔액이 곧 거래 합계이기 때문이다.
-        amount: new Prisma.Decimal(dto.amount).negated(),
-        description: dto.description.trim(),
-        createdById: user.id,
-      },
+    const requested = dto.allocations ?? [];
+    if (requested.length > 0 && dto.autoApply === 'true') {
+      throw new BadRequestException(
+        '자동 배분과 직접 배분을 함께 쓸 수 없습니다. 하나만 골라 주세요.',
+      );
+    }
+
+    // 열려 있는 청구서와 남은 금액. 배분은 이 안에서만 이뤄진다.
+    const open = await this.openInvoices(account.id);
+    const outstanding = new Map(open.map((row) => [row.invoice.id, row.outstanding]));
+
+    let plan: Array<{ invoiceId: string; amount: Prisma.Decimal }>;
+    if (dto.autoApply === 'true') {
+      plan = this.autoAllocate(open, amount);
+    } else {
+      plan = requested.map((row) => ({
+        invoiceId: row.invoiceId,
+        amount: new Prisma.Decimal(row.amount),
+      }));
+
+      for (const row of plan) {
+        const left = outstanding.get(row.invoiceId);
+        if (left === undefined) {
+          throw new BadRequestException(
+            `이 거래처의 청구서가 아니거나 이미 정리된 청구서입니다: ${row.invoiceId}`,
+          );
+        }
+        if (row.amount.greaterThan(left)) {
+          throw new BadRequestException(
+            `청구서에 남은 금액보다 많이 붙일 수 없습니다. 남은 금액 ${left.toString()}, 붙이려는 금액 ${row.amount.toString()}`,
+          );
+        }
+      }
+
+      const seen = new Set(plan.map((row) => row.invoiceId));
+      if (seen.size !== plan.length) {
+        throw new BadRequestException('같은 청구서를 두 번 지정했습니다.');
+      }
+    }
+
+    const allocated = plan.reduce((sum, row) => sum.add(row.amount), new Prisma.Decimal(0));
+    // 받은 돈보다 많이 붙이면 없는 돈으로 청구서를 지우는 것이 된다.
+    if (allocated.greaterThan(amount)) {
+      throw new BadRequestException(
+        `입금액보다 많이 배분할 수 없습니다. 입금 ${amount.toString()}, 배분 ${allocated.toString()}`,
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.arTransaction.create({
+        data: {
+          accountId: account.id,
+          type: ArTransactionType.PAYMENT,
+          // 입금은 음수로 올라간다. 잔액이 곧 거래 합계이기 때문이다.
+          amount: amount.negated(),
+          description: dto.description.trim(),
+          createdById: user.id,
+        },
+      });
+
+      for (const row of plan) {
+        if (row.amount.lessThanOrEqualTo(0)) continue;
+        await tx.arAllocation.create({
+          data: {
+            invoiceId: row.invoiceId,
+            paymentId: payment.id,
+            amount: row.amount,
+            createdById: user.id,
+          },
+        });
+
+        // 다 채운 청구서는 수금으로 넘긴다. 남았으면 그대로 둔다.
+        const left = (outstanding.get(row.invoiceId) ?? new Prisma.Decimal(0)).sub(row.amount);
+        if (left.lessThanOrEqualTo(0)) {
+          await tx.arInvoice.update({
+            where: { id: row.invoiceId },
+            data: { status: ArInvoiceStatus.PAID, paidAt: new Date() },
+          });
+        }
+      }
+
+      return {
+        payment,
+        allocations: plan.map((row) => ({
+          invoiceId: row.invoiceId,
+          amount: row.amount.toFixed(2),
+        })),
+        unapplied: amount.sub(allocated).toFixed(2),
+      };
     });
+  }
+
+  /**
+   * 연체 현황.
+   *
+   * 만기가 지난 청구서를 거래처별로 모으고 얼마나 지났는지로 나눈다. 오래된
+   * 미수일수록 받기 어려워지므로, 총액만 보면 어디부터 손대야 하는지 알 수 없다.
+   */
+  async aging(query: AgingDto, user: AuthUser) {
+    const propertyId = resolvePropertyScope(user, query.propertyId);
+    const asOf = query.asOf ?? new Date().toISOString().slice(0, 10);
+    const asOfDate = new Date(`${asOf}T00:00:00.000Z`);
+
+    const invoices = await this.prisma.arInvoice.findMany({
+      where: {
+        ...(propertyId ? { propertyId } : {}),
+        status: { notIn: [ArInvoiceStatus.PAID, ArInvoiceStatus.VOID] },
+      },
+      include: {
+        account: { select: { id: true, code: true, name: true, billingEmail: true } },
+        allocations: { select: { amount: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+
+    const buckets = ['current', 'days30', 'days60', 'days90', 'over90'] as const;
+    type Bucket = (typeof buckets)[number];
+
+    const accounts = new Map<
+      string,
+      {
+        account: (typeof invoices)[number]['account'];
+        total: Prisma.Decimal;
+        overdue: Prisma.Decimal;
+        buckets: Record<Bucket, Prisma.Decimal>;
+        invoices: Array<{
+          id: string;
+          number: string;
+          dueDate: string;
+          status: string;
+          total: string;
+          paid: string;
+          outstanding: string;
+          daysOverdue: number;
+        }>;
+      }
+    >();
+
+    for (const invoice of invoices) {
+      const paid = invoice.allocations.reduce(
+        (sum, row) => sum.add(row.amount),
+        new Prisma.Decimal(0),
+      );
+      const outstanding = invoice.total.sub(paid);
+      // 다 받은 청구서는 상태가 늦게 따라올 수 있다. 남은 금액이 없으면 뺀다.
+      if (outstanding.lessThanOrEqualTo(0)) continue;
+
+      const daysOverdue = Math.floor((asOfDate.getTime() - invoice.dueDate.getTime()) / 86_400_000);
+      const bucket: Bucket =
+        daysOverdue <= 0
+          ? 'current'
+          : daysOverdue <= 30
+            ? 'days30'
+            : daysOverdue <= 60
+              ? 'days60'
+              : daysOverdue <= 90
+                ? 'days90'
+                : 'over90';
+
+      const row = accounts.get(invoice.accountId) ?? {
+        account: invoice.account,
+        total: new Prisma.Decimal(0),
+        overdue: new Prisma.Decimal(0),
+        buckets: {
+          current: new Prisma.Decimal(0),
+          days30: new Prisma.Decimal(0),
+          days60: new Prisma.Decimal(0),
+          days90: new Prisma.Decimal(0),
+          over90: new Prisma.Decimal(0),
+        },
+        invoices: [],
+      };
+
+      row.total = row.total.add(outstanding);
+      if (daysOverdue > 0) row.overdue = row.overdue.add(outstanding);
+      row.buckets[bucket] = row.buckets[bucket].add(outstanding);
+      row.invoices.push({
+        id: invoice.id,
+        number: invoice.number,
+        dueDate: invoice.dueDate.toISOString().slice(0, 10),
+        status: invoice.status,
+        total: invoice.total.toFixed(2),
+        paid: paid.toFixed(2),
+        outstanding: outstanding.toFixed(2),
+        daysOverdue: Math.max(0, daysOverdue),
+      });
+      accounts.set(invoice.accountId, row);
+    }
+
+    const items = [...accounts.values()]
+      .map((row) => ({
+        account: row.account,
+        total: row.total.toFixed(2),
+        overdue: row.overdue.toFixed(2),
+        buckets: Object.fromEntries(
+          buckets.map((bucket) => [bucket, row.buckets[bucket].toFixed(2)]),
+        ) as Record<Bucket, string>,
+        invoices: row.invoices,
+      }))
+      // 연체가 큰 곳부터 본다. 오래된 미수일수록 받기 어렵다.
+      .sort((a, b) => Number(b.overdue) - Number(a.overdue) || Number(b.total) - Number(a.total));
+
+    const totals = buckets.reduce<Record<string, Prisma.Decimal>>((acc, bucket) => {
+      acc[bucket] = items.reduce(
+        (sum, row) => sum.add(new Prisma.Decimal(row.buckets[bucket])),
+        new Prisma.Decimal(0),
+      );
+      return acc;
+    }, {});
+
+    return {
+      asOf,
+      items,
+      totals: {
+        ...Object.fromEntries(
+          Object.entries(totals).map(([key, value]) => [key, value.toFixed(2)]),
+        ),
+        total: items
+          .reduce((sum, row) => sum.add(new Prisma.Decimal(row.total)), new Prisma.Decimal(0))
+          .toFixed(2),
+        overdue: items
+          .reduce((sum, row) => sum.add(new Prisma.Decimal(row.overdue)), new Prisma.Decimal(0))
+          .toFixed(2),
+      },
+    };
+  }
+
+  /** 아직 다 받지 못한 청구서와 남은 금액. 만기가 빠른 순이다. */
+  private async openInvoices(accountId: string) {
+    const invoices = await this.prisma.arInvoice.findMany({
+      where: { accountId, status: { notIn: [ArInvoiceStatus.PAID, ArInvoiceStatus.VOID] } },
+      include: { allocations: { select: { amount: true } } },
+      orderBy: [{ dueDate: 'asc' }, { issuedAt: 'asc' }],
+    });
+
+    return invoices
+      .map((invoice) => ({
+        invoice,
+        outstanding: invoice.total.sub(
+          invoice.allocations.reduce((sum, row) => sum.add(row.amount), new Prisma.Decimal(0)),
+        ),
+      }))
+      .filter((row) => row.outstanding.greaterThan(0));
+  }
+
+  /** 만기가 빠른 청구서부터 채운다. 오래 묵은 미수를 먼저 정리하는 것이 보통이다. */
+  private autoAllocate(
+    open: Array<{ invoice: { id: string }; outstanding: Prisma.Decimal }>,
+    amount: Prisma.Decimal,
+  ): Array<{ invoiceId: string; amount: Prisma.Decimal }> {
+    const plan: Array<{ invoiceId: string; amount: Prisma.Decimal }> = [];
+    let left = amount;
+
+    for (const row of open) {
+      if (left.lessThanOrEqualTo(0)) break;
+      const apply = left.greaterThan(row.outstanding) ? row.outstanding : left;
+      plan.push({ invoiceId: row.invoice.id, amount: apply });
+      left = left.sub(apply);
+    }
+
+    return plan;
   }
 
   // --- 청구서 --------------------------------------------------------------
@@ -379,14 +665,28 @@ export class ArService {
     });
   }
 
+  /**
+   * 청구서 단건.
+   *
+   * 거래처에 보내는 문서의 재료다. 호텔 정보와 청구 내역, 받은 금액과 남은
+   * 금액이 한 번에 있어야 문서를 다시 조립하지 않고 그대로 낼 수 있다.
+   */
   async invoiceDetail(id: string, user: AuthUser) {
     const invoice = await this.prisma.arInvoice.findUnique({
       where: { id },
       include: {
         account: true,
+        // 청구서에 찍히는 발행처. 주소는 문서에 필요하다.
+        property: { select: { id: true, name: true, address: true, currency: true } },
         transactions: {
           include: { reservation: { select: { id: true, confirmationNumber: true } } },
           orderBy: { postedAt: 'asc' },
+        },
+        allocations: {
+          include: {
+            payment: { select: { id: true, description: true, postedAt: true } },
+          },
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
@@ -394,7 +694,26 @@ export class ArService {
       throw new NotFoundException(`청구서를 찾을 수 없습니다: ${id}`);
     }
     assertWithinScope(user, invoice.propertyId);
-    return invoice;
+
+    const paid = invoice.allocations.reduce(
+      (sum, row) => sum.add(row.amount),
+      new Prisma.Decimal(0),
+    );
+    const outstanding = invoice.total.sub(paid);
+    const today = new Date().toISOString().slice(0, 10);
+    const dueDate = invoice.dueDate.toISOString().slice(0, 10);
+
+    return {
+      ...invoice,
+      paid: paid.toFixed(2),
+      outstanding: outstanding.toFixed(2),
+      // 무효·수금된 청구서는 연체가 아니다.
+      overdue:
+        invoice.status !== ArInvoiceStatus.PAID &&
+        invoice.status !== ArInvoiceStatus.VOID &&
+        outstanding.greaterThan(0) &&
+        dueDate < today,
+    };
   }
 
   // ---------------------------------------------------------------------------

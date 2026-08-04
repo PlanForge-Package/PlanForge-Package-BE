@@ -252,7 +252,8 @@ internal network with no published ports.
 | `GET` | `/api/ar/accounts/:id` | Account detail — balance, ledger, invoices |
 | `POST` `PATCH` | `/api/ar/accounts` | Create · update an account (MANAGER) |
 | `POST` | `/api/reservations/:id/ar/transfer` | Move a folio balance to an account — clears the OPERA folio too |
-| `POST` | `/api/ar/accounts/:id/payments` | Record a payment (MANAGER) |
+| `POST` | `/api/ar/accounts/:id/payments` | Record a payment · apply to invoices (MANAGER) |
+| `GET` | `/api/ar/aging` | Aging — overdue by account and bucket |
 | `POST` | `/api/ar/accounts/:id/invoices` | Issue an invoice from unbilled charges (MANAGER) |
 | `GET` | `/api/ar/invoices/:id` | Invoice detail |
 | `PATCH` | `/api/ar/invoices/:id/status` | Status — voiding releases its charges (MANAGER) |

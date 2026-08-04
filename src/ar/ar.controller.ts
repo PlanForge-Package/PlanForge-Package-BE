@@ -6,6 +6,7 @@ import { Roles } from '../auth/auth.constants';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ArService } from './ar.service';
 import {
+  AgingDto,
   CreateAccountDto,
   CreateInvoiceDto,
   ListAccountsDto,
@@ -32,6 +33,14 @@ export class ArController {
   @ApiOperation({ summary: '거래처 목록 — 잔액 포함' })
   listAccounts(@Query() query: ListAccountsDto, @CurrentUser() user: AuthUser) {
     return this.ar.listAccounts(query, user);
+  }
+
+  // 연체는 거래처 목록보다 앞에 둔다 — 라우트가 :id 로 먹히지 않게 한다.
+  @Get('aging')
+  @Roles(UserRole.MANAGER, UserRole.FRONT_DESK)
+  @ApiOperation({ summary: '연체 현황 — 거래처별 경과 구간과 청구서' })
+  aging(@Query() query: AgingDto, @CurrentUser() user: AuthUser) {
+    return this.ar.aging(query, user);
   }
 
   @Get('accounts/:id')

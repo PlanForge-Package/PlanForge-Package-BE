@@ -250,7 +250,8 @@ cd deploy && docker compose up -d
 | `GET` | `/api/ar/accounts/:id` | 거래처 상세 — 잔액·거래·청구서 |
 | `POST` `PATCH` | `/api/ar/accounts` | 거래처 등록 · 수정 (MANAGER) |
 | `POST` | `/api/reservations/:id/ar/transfer` | 폴리오 잔액을 거래처로 이관 — OPERA 폴리오도 비웁니다 |
-| `POST` | `/api/ar/accounts/:id/payments` | 거래처 입금 기록 (MANAGER) |
+| `POST` | `/api/ar/accounts/:id/payments` | 거래처 입금 기록 · 청구서 배분 (MANAGER) |
+| `GET` | `/api/ar/aging` | 연체 현황 — 거래처별 경과 구간 |
 | `POST` | `/api/ar/accounts/:id/invoices` | 청구서 발행 — 미청구 거래를 모읍니다 (MANAGER) |
 | `GET` | `/api/ar/invoices/:id` | 청구서 상세 |
 | `PATCH` | `/api/ar/invoices/:id/status` | 상태 변경 — 무효로 돌리면 거래가 다시 풀립니다 (MANAGER) |
