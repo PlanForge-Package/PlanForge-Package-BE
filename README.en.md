@@ -234,6 +234,10 @@ internal network with no published ports.
 | `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | Past shifts · detail |
 | `POST` | `/api/cashier/shifts` | Open a shift (with the opening float) |
 | `POST` | `/api/cashier/shifts/:id/close` | Close — records the variance |
+| `GET` | `/api/traces` | Traces by date and department |
+| `GET` `POST` | `/api/reservations/:id/traces` | Read · add traces on a reservation |
+| `PATCH` | `/api/traces/:id/complete` | Mark done |
+| `DELETE` | `/api/traces/:id` | Withdraw (pending only) |
 
 </details>
 

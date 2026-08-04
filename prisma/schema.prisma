@@ -43,14 +43,16 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  property          Property?          @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  housekeepingTasks HousekeepingTask[]
-  issuedRoomKeys    RoomKey[]
-  payments          Payment[]
-  roomOutages       RoomOutage[]
-  folioRoutings     FolioRouting[]
+  property            Property?          @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  housekeepingTasks   HousekeepingTask[]
+  issuedRoomKeys      RoomKey[]
+  payments            Payment[]
+  roomOutages         RoomOutage[]
+  folioRoutings       FolioRouting[]
   transferredPostings Posting[]
-  cashierShifts     CashierShift[]
+  cashierShifts       CashierShift[]
+  createdTraces       ReservationTrace[] @relation("TraceCreatedBy")
+  completedTraces     ReservationTrace[] @relation("TraceCompletedBy")
 
   @@index([propertyId])
   @@map("users")
@@ -83,6 +85,7 @@ model Property {
   roomKeys          RoomKey[]
   roomOutages       RoomOutage[]
   cashierShifts     CashierShift[]
+  traces            ReservationTrace[]
 
   @@map("properties")
 }
@@ -254,7 +257,6 @@ enum BlockStatus {
 
 /**
  * 단체 블록의 로컬 사본.
- *
  * 원천은 OPERA 다. 여기 있는 값은 목록·검색을 빠르게 하려고 두는 캐시이고,
  * 생성·수정은 전부 Core 를 거쳐 OPERA 에 위임한 뒤 **OPERA 가 돌려준 값**으로
  * 다시 채운다. 우리가 보낸 값을 그대로 적으면 OPERA 가 조정한 결과를 놓친다.
@@ -289,7 +291,6 @@ model Block {
 
 /**
  * 일자·객실 타입별 할당.
- *
  * roomType 을 FK 가 아니라 코드 문자열로 들고 있는 이유: OPERA 가 우리 쪽에
  * 아직 동기화되지 않은 객실 타입을 돌려줄 수 있다. FK 로 묶으면 그때 미러링
  * 전체가 실패해 블록이 화면에서 통째로 사라진다.
@@ -350,7 +351,6 @@ model Profile {
 
   /**
    * 선호 사항. 고층·금연·베개 종류처럼 배정에 영향을 주는 것들.
-   *
    * 자유 텍스트가 아니라 코드 배열로 둔다. 텍스트로 받으면 "고층"·"높은 층"·
    * "high floor" 가 뒤섞여 배정할 때 아무도 걸러낼 수 없다.
    */
@@ -361,7 +361,6 @@ model Profile {
 
   /**
    * 중복으로 판명되어 다른 프로필로 합쳐진 경우 그 대상.
-   *
    * 지우지 않는 이유는 과거 예약이 이 프로필을 참조하고 있어서다. 삭제하면
    * 예약의 게스트가 사라지고, 남겨 두면 어느 쪽이 정본인지 알 수 있다.
    */
@@ -418,7 +417,6 @@ model Reservation {
 
   /**
    * 예약이 들어온 경로. OPERA 가 세 축으로 나눈 것을 그대로 따른다.
-   *
    * 하나로 합치면 "OTA 를 통해 들어온 법인 예약" 같은 조합을 구분할 수 없어
    * 채널별 수익성 판단이 무너진다.
    */
@@ -428,19 +426,20 @@ model Reservation {
   marketCode  String?
   /// 구체적인 판매 채널 — WEB · BOOKINGCOM · EXPEDIA · YANOLJA …
   channelCode String?
-  totalAmount        Decimal?          @db.Decimal(12, 2)
-  currency           String            @default("KRW")
-  notes              String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  totalAmount Decimal? @db.Decimal(12, 2)
+  currency    String   @default("KRW")
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  property Property  @relation(fields: [propertyId], references: [id])
-  profile  Profile   @relation(fields: [profileId], references: [id])
-  roomType RoomType  @relation(fields: [roomTypeId], references: [id])
-  ratePlan RatePlan? @relation(fields: [ratePlanId], references: [id])
+  property Property           @relation(fields: [propertyId], references: [id])
+  profile  Profile            @relation(fields: [profileId], references: [id])
+  roomType RoomType           @relation(fields: [roomTypeId], references: [id])
+  ratePlan RatePlan?          @relation(fields: [ratePlanId], references: [id])
   folios   Folio[]
   roomKeys RoomKey[]
   routings FolioRouting[]
+  traces   ReservationTrace[]
 
   @@index([propertyId, arrivalDate])
   @@index([propertyId, status])
@@ -481,11 +480,9 @@ model Folio {
 
 /**
  * 라우팅 지시 — 자동으로 붙는 요금을 어느 창구로 보낼지.
- *
  * 회사가 객실료를 내고 손님이 부대비용을 내는 편성이 흔하다. 요금이 붙을
  * 때마다 사람이 옮기면 반드시 빠뜨리는 것이 생기므로, 거래 코드별로 목적지를
  * 미리 정해 둔다.
- *
  * 프런트가 창구를 지정해 올리는 거래에는 적용하지 않는다 — 지정한 곳으로
  * 가야 한다. 적용 대상은 외부 POS 룸차지처럼 창구를 모르는 채 들어오는
  * 요금이다.
@@ -510,17 +507,16 @@ model FolioRouting {
 
 /**
  * 외부 POS 아웃렛 — 레스토랑·바·스파·미니바.
- *
  * 객실로 요금을 다는 주체이지 사람이 아니다. 직원 계정을 쓰게 하면 단말에
  * 직원 비밀번호를 심게 되고, 그 단말이 직원 권한 전부를 얻는다. 아웃렛마다
  * 자기 키를 주고 그 키로 할 수 있는 일을 룸차지 하나로 좁힌다.
  */
 model PosOutlet {
-  id         String @id @default(cuid())
-  propertyId String
+  id              String @id @default(cuid())
+  propertyId      String
   /// 아웃렛 코드 — RESTAURANT · BAR · SPA · MINIBAR
-  code       String
-  name       String
+  code            String
+  name            String
   /// 이 아웃렛이 다는 요금의 기본 거래 코드
   transactionCode String
 
@@ -531,10 +527,10 @@ model PosOutlet {
   /// 키를 마지막으로 발급한 시각. 유출이 의심되면 재발급 이력을 본다.
   keyIssuedAt  DateTime @default(now())
 
-  active    Boolean  @default(true)
+  active     Boolean   @default(true)
   lastUsedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   property Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   postings Posting[]
@@ -564,7 +560,6 @@ enum PaymentStatus {
 
 /**
  * 결제.
- *
  * **카드 번호와 CVV 는 어디에도 저장하지 않는다.** 마스킹된 뒷자리와 PG 가 준
  * 거래 식별자만 남긴다. 저장하는 순간 이 시스템 전체가 카드 정보 보관 설비가
  * 되고, 유출 시 책임 범위가 달라진다.
@@ -573,12 +568,12 @@ model Payment {
   id      String @id @default(cuid())
   folioId String
 
-  method PaymentMethod
-  status PaymentStatus @default(AUTHORIZED)
-  amount Decimal       @db.Decimal(12, 2)
+  method         PaymentMethod
+  status         PaymentStatus @default(AUTHORIZED)
+  amount         Decimal       @db.Decimal(12, 2)
   /// 환불된 누적 금액. 부분 환불을 여러 번 받을 수 있다.
-  refundedAmount Decimal @default(0) @db.Decimal(12, 2)
-  currency       String  @default("KRW")
+  refundedAmount Decimal       @default(0) @db.Decimal(12, 2)
+  currency       String        @default("KRW")
 
   /// PG 의 거래 식별자. 매입·취소·환불을 걸 때 이 값으로 지정한다.
   vendorTxnId    String?
@@ -590,7 +585,6 @@ model Payment {
 
   /**
    * 요청 멱등키.
-   *
    * 결제 요청이 재전송되면 같은 카드로 두 번 긁힌다. 손님 돈이 두 번 나가는
    * 일은 그 무엇보다 되돌리기 어렵다.
    */
@@ -618,12 +612,58 @@ model Payment {
   @@map("payments")
 }
 
+/// 트레이스를 받을 부서. 역할과는 다르다 — 정비는 역할이 없지만 지시는 간다.
+enum TraceDepartment {
+  FRONT_DESK
+  HOUSEKEEPING
+  MAINTENANCE
+  FNB
+  RESERVATION
+}
+
+enum TraceStatus {
+  PENDING
+  DONE
+}
+
+/**
+ * 트레이스 — 예약에 붙는 부서별 지시.
+ * "도착일 07:00 하우스키핑 — 유아용 침대", "체크인 시 지배인 인사" 처럼 특정
+ * 날짜에 특정 부서가 해야 할 일이다. 예약 메모에 적어 두면 그 부서가 예약을
+ * 열어 보지 않는 한 아무도 읽지 않는다.
+ * 이 지시는 우리 직원의 근무 편성이라 OPERA 에 보내지 않는다 — 하우스키핑
+ * 배정과 같은 이유다. OHIP 의 트레이스 API 를 확인하면 그때 위임을 검토한다.
+ */
+model ReservationTrace {
+  id            String          @id @default(cuid())
+  propertyId    String
+  reservationId String
+  department    TraceDepartment
+  /// 이 지시를 처리해야 하는 날짜
+  dueDate       DateTime        @db.Date
+  note          String
+  status        TraceStatus     @default(PENDING)
+
+  createdById   String?
+  completedById String?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  property    Property    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  createdBy   User?       @relation("TraceCreatedBy", fields: [createdById], references: [id])
+  completedBy User?       @relation("TraceCompletedBy", fields: [completedById], references: [id])
+
+  @@index([propertyId, dueDate, department, status])
+  @@index([reservationId])
+  @@map("reservation_traces")
+}
+
 /**
  * 캐셔 근무조.
- *
  * 프런트는 교대로 돈을 받는다. 누가 얼마를 받았는지 조별로 끊어 두지 않으면
  * 현금이 맞지 않을 때 어느 시간대의 누구를 봐야 하는지 알 수 없다.
- *
  * 이 기록은 우리 직원의 근무 편성이라 OPERA 에 보내지 않는다 — 하우스키핑
  * 배정과 같은 이유다. 돈 자체는 이미 OPERA 폴리오에 올라가 있고, 여기서는
  * "누가 받아서 금고에 얼마를 넣었는가" 만 다룬다.
@@ -636,7 +676,7 @@ model CashierShift {
   closedAt   DateTime?
 
   /// 시작 시재. 거스름돈용으로 넣어 둔 현금이다.
-  openingFloat Decimal @default(0) @db.Decimal(12, 2)
+  openingFloat Decimal  @default(0) @db.Decimal(12, 2)
   /// 마감할 때 실제로 센 현금. 마감 전에는 비어 있다.
   countedCash  Decimal? @db.Decimal(12, 2)
   notes        String?
@@ -663,7 +703,6 @@ enum RoomKeyStatus {
 
 /**
  * 발급된 객실 키.
- *
  * 실제 카드 데이터는 잠금장치 벤더가 들고 있고, 여기 남는 것은 **무엇을 언제
  * 누구에게 발급했는가** 다. 분실 신고가 들어왔을 때 어느 카드를 죽여야 하는지,
  * 체크아웃한 손님의 카드가 아직 살아 있지는 않은지 판단할 근거가 된다.
@@ -680,9 +719,9 @@ model RoomKey {
   validFrom  DateTime
   validUntil DateTime
 
-  status RoomKeyStatus @default(ACTIVE)
+  status   RoomKeyStatus @default(ACTIVE)
   /// 몇 번째 발급인지. 재발급이 잦은 객실은 따로 확인할 이유가 된다.
-  sequence Int @default(1)
+  sequence Int           @default(1)
 
   issuedById    String?
   issuedAt      DateTime  @default(now())
@@ -721,16 +760,15 @@ model Posting {
   createdAt       DateTime    @default(now())
 
   /// 외부 POS 가 단 요금이면 그 아웃렛. 프런트가 직접 올린 것은 null.
-  outletId String?
+  outletId   String?
   /// PG 결제가 만든 포스팅이면 그 결제. 대사할 때 쓴다.
-  paymentId String?
+  paymentId  String?
   /**
    * POS 전표 번호.
-   *
    * 네트워크가 끊겨 POS 가 같은 요청을 다시 보내는 일은 흔하다. 같은 아웃렛의
    * 같은 전표는 한 번만 달려야 한다 — 손님에게 두 번 청구되면 되돌리기 어렵다.
    */
-  reference String?
+  reference  String?
   /// 취소된 포스팅이면 그 취소를 만든 조정 포스팅. 원본은 지우지 않는다.
   voidedById String? @unique
 
@@ -745,7 +783,7 @@ model Posting {
   transferredBy User?      @relation(fields: [transferredById], references: [id])
 
   /// 이 포스팅을 취소한 조정. 값이 있으면 이미 취소된 것이다.
-  voidedBy Posting? @relation("PostingVoid", fields: [voidedById], references: [id], onDelete: SetNull)
+  voidedBy      Posting? @relation("PostingVoid", fields: [voidedById], references: [id], onDelete: SetNull)
   /// 반대 방향 — 이 조정이 취소한 원본. 이름이 헷갈려 방향을 거꾸로 읽기 쉽다.
   voidedPosting Posting? @relation("PostingVoid")
 

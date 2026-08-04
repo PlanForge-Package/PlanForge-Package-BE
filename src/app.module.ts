@@ -21,6 +21,7 @@ import { ReservationsModule } from './reservations/reservations.module';
 import { RoomOutagesModule } from './room-outages/room-outages.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { SyncModule } from './sync/sync.module';
+import { TracesModule } from './traces/traces.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -47,6 +48,7 @@ import { UsersModule } from './users/users.module';
     RoomOutagesModule,
     RoomsModule,
     SyncModule,
+    TracesModule,
     UsersModule,
   ],
   providers: [

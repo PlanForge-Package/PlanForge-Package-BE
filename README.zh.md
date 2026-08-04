@@ -230,6 +230,10 @@ cd deploy && docker compose up -d
 | `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | 历史班次 · 详情 |
 | `POST` | `/api/cashier/shifts` | 开始班次（备用金） |
 | `POST` | `/api/cashier/shifts/:id/close` | 结班 —— 记录长短款 |
+| `GET` | `/api/traces` | 按日期与部门查看指示 |
+| `GET` `POST` | `/api/reservations/:id/traces` | 查询 · 登记预订指示 |
+| `PATCH` | `/api/traces/:id/complete` | 标记已处理 |
+| `DELETE` | `/api/traces/:id` | 撤回（仅未处理） |
 
 </details>
 

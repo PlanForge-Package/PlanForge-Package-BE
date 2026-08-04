@@ -232,6 +232,10 @@ cd deploy && docker compose up -d
 | `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | 지난 근무조 · 상세 |
 | `POST` | `/api/cashier/shifts` | 근무조 시작 (시작 시재) |
 | `POST` | `/api/cashier/shifts/:id/close` | 마감 — 센 현금과의 차이를 남깁니다 |
+| `GET` | `/api/traces` | 날짜·부서별 지시 목록 |
+| `GET` `POST` | `/api/reservations/:id/traces` | 예약의 지시 조회 · 등록 |
+| `PATCH` | `/api/traces/:id/complete` | 처리 완료 |
+| `DELETE` | `/api/traces/:id` | 지시 거두기 (미처리만) |
 
 </details>
 

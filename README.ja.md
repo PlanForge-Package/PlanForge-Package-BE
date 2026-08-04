@@ -233,6 +233,10 @@ cd deploy && docker compose up -d
 | `GET` | `/api/cashier/shifts` `\|` `/api/cashier/shifts/:id` | 過去のシフト・詳細 |
 | `POST` | `/api/cashier/shifts` | シフト開始（釣銭準備金） |
 | `POST` | `/api/cashier/shifts/:id/close` | 締め —— 過不足を残します |
+| `GET` | `/api/traces` | 日付・部署別のトレース |
+| `GET` `POST` | `/api/reservations/:id/traces` | 予約のトレース照会・登録 |
+| `PATCH` | `/api/traces/:id/complete` | 処理済みにする |
+| `DELETE` | `/api/traces/:id` | 取り下げ（未処理のみ） |
 
 </details>
 
