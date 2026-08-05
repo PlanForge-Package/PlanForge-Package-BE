@@ -76,7 +76,7 @@ describe('JwtAuthGuard', () => {
 
     await expect(
       guard.canActivate(contextFor({ headers: { authorization: 'Bearer old.token' } })),
-    ).rejects.toThrow(/세션이 만료/);
+    ).rejects.toMatchObject({ response: { code: 'SESSION_EXPIRED' } });
   });
 
   it('위조된 토큰은 다른 문구로 거절한다', async () => {
@@ -86,6 +86,6 @@ describe('JwtAuthGuard', () => {
 
     await expect(
       guard.canActivate(contextFor({ headers: { authorization: 'Bearer forged' } })),
-    ).rejects.toThrow(/유효하지 않은 토큰/);
+    ).rejects.toMatchObject({ response: { code: 'TOKEN_INVALID' } });
   });
 });

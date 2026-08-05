@@ -404,7 +404,7 @@ describe('ReportsService — 기간 검증', () => {
     const service = await buildService(buildPrisma({}));
     await expect(
       service.daily({ propertyId: 'prop-1', from: '2026-01-01', to: '2026-12-31' }, HQ),
-    ).rejects.toThrow(/최대 92일/);
+    ).rejects.toMatchObject({ response: { code: 'RANGE_TOO_LONG' } });
   });
 
   it('다른 호텔을 요청하면 막는다', async () => {
@@ -412,6 +412,6 @@ describe('ReportsService — 기간 검증', () => {
     const scoped: AuthUser = { ...HQ, propertyId: 'prop-2' };
     await expect(
       service.daily({ propertyId: 'prop-1', from: '2026-08-01', to: '2026-08-01' }, scoped),
-    ).rejects.toThrow(/접근할 수 없습니다/);
+    ).rejects.toMatchObject({ response: { code: 'OTHER_PROPERTY_FORBIDDEN' } });
   });
 });

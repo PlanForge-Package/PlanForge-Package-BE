@@ -120,9 +120,9 @@ describe('ProfilesService — 수정', () => {
   // Free text lets equivalent wordings pile up and become unfilterable at assignment.
   it('알 수 없는 선호 코드는 거절한다', async () => {
     const service = await buildService(buildPrisma());
-    await expect(service.update('pf-1', { preferences: ['고층'] })).rejects.toThrow(
-      /알 수 없는 선호 코드/,
-    );
+    await expect(service.update('pf-1', { preferences: ['고층'] })).rejects.toMatchObject({
+      response: { code: 'PROFILE_PREFERENCE_UNKNOWN' },
+    });
   });
 
   it('이메일은 소문자로 맞춘다', async () => {
@@ -254,7 +254,7 @@ describe('ProfilesService — 병합', () => {
     core.mergeProfile.mockRejectedValue(new Error('이미 병합된 프로필'));
     const service = await buildService(prisma, core);
 
-    await expect(service.merge('src', 'dst')).rejects.toThrow('이미 병합된 프로필');
+    await expect(service.merge('src', 'dst')).rejects.toThrow(/이미 병합된 프로필/);
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.syncLog.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
@@ -290,7 +290,9 @@ describe('ProfilesService — 병합', () => {
 
   it('자기 자신과는 병합할 수 없다', async () => {
     const service = await buildService(buildPrisma());
-    await expect(service.merge('pf-1', 'pf-1')).rejects.toThrow(/같은 프로필/);
+    await expect(service.merge('pf-1', 'pf-1')).rejects.toMatchObject({
+      response: { code: 'PROFILE_MERGE_SELF' },
+    });
   });
 
   it('이미 병합된 프로필은 다시 병합할 수 없다', async () => {
@@ -300,7 +302,9 @@ describe('ProfilesService — 병합', () => {
     );
     const service = await buildService(prisma);
 
-    await expect(service.merge('src', 'dst')).rejects.toThrow(/이미 병합된/);
+    await expect(service.merge('src', 'dst')).rejects.toMatchObject({
+      response: { code: 'PROFILE_ALREADY_MERGED' },
+    });
   });
 
   it('대상이 병합된 프로필이면 거절한다', async () => {
@@ -310,7 +314,9 @@ describe('ProfilesService — 병합', () => {
     );
     const service = await buildService(prisma);
 
-    await expect(service.merge('src', 'dst')).rejects.toThrow(/정본을 대상으로/);
+    await expect(service.merge('src', 'dst')).rejects.toMatchObject({
+      response: { code: 'PROFILE_TARGET_MERGED' },
+    });
   });
 });
 

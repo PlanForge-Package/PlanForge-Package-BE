@@ -294,7 +294,9 @@ describe('BookingService — 수정·취소', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.update('res-1', { adults: 3 }, HQ)).rejects.toThrow(/연결되지 않은/);
+    await expect(service.update('res-1', { adults: 3 }, HQ)).rejects.toMatchObject({
+      response: { code: 'RESERVATION_NOT_LINKED' },
+    });
     expect(core.updateReservation).not.toHaveBeenCalled();
   });
 
@@ -330,7 +332,7 @@ describe('BookingService — 가용성·요금', () => {
 
     await expect(
       service.getRates({ arrivalDate: '2026-09-01', departureDate: '2026-09-03' }, HQ),
-    ).rejects.toThrow(/호텔을 선택/);
+    ).rejects.toMatchObject({ response: { code: 'PROPERTY_REQUIRED' } });
     expect(core.getRates).not.toHaveBeenCalled();
   });
 });
@@ -366,7 +368,9 @@ describe('BookingService — 대기 확정', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.confirmWaitlist('res-1', HQ)).rejects.toThrow(/대기 상태가 아닙니다/);
+    await expect(service.confirmWaitlist('res-1', HQ)).rejects.toMatchObject({
+      response: { code: 'NOT_WAITLISTED' },
+    });
     expect(core.confirmWaitlist).not.toHaveBeenCalled();
   });
 
@@ -438,7 +442,9 @@ describe('BookingService — 객실 공유', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.share('res-1', 'res-2', HQ)).rejects.toThrow(/다른 호텔/);
+    await expect(service.share('res-1', 'res-2', HQ)).rejects.toMatchObject({
+      response: { code: 'SHARE_OTHER_PROPERTY' },
+    });
     expect(core.shareReservation).not.toHaveBeenCalled();
   });
 
@@ -464,7 +470,9 @@ describe('BookingService — 객실 공유', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.unshare('res-1', HQ)).rejects.toThrow(/공유 중인 예약이 아닙니다/);
+    await expect(service.unshare('res-1', HQ)).rejects.toMatchObject({
+      response: { code: 'NOT_SHARED' },
+    });
     expect(core.unshareReservation).not.toHaveBeenCalled();
   });
 

@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { type PosOutlet } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
@@ -13,6 +8,7 @@ import { resolvePropertyScope } from '../properties/property-scope';
 import { POS_KEY_PREFIX, POS_KEY_PREFIX_LENGTH } from './pos-key.guard';
 import type { CreateOutletDto, UpdateOutletDto } from './dto/pos.dto';
 import { isUniqueViolation } from '../common/prisma-errors';
+import { badRequest, conflict, notFound } from '../common/errors';
 
 /** Random bytes in a key. At 32 bytes, guessing is not realistically possible. */
 const KEY_BYTES = 32;
@@ -43,12 +39,12 @@ export class OutletsService {
   async create(dto: CreateOutletDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, dto.propertyId);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
 
     const { key, hash, prefix } = await issueKey();
@@ -67,7 +63,7 @@ export class OutletsService {
       return { outlet: toPublicOutlet(outlet), apiKey: key };
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new ConflictException(`이미 등록된 아웃렛 코드입니다: ${dto.code}`);
+        throw conflict('POS_OUTLET_CODE_TAKEN', { code: dto.code });
       }
       throw error;
     }
@@ -109,7 +105,7 @@ export class OutletsService {
   private async load(id: string, user: AuthUser): Promise<PosOutlet> {
     const outlet = await this.prisma.posOutlet.findUnique({ where: { id } });
     if (!outlet) {
-      throw new NotFoundException(`아웃렛을 찾을 수 없습니다: ${id}`);
+      throw notFound('POS_OUTLET_NOT_FOUND', { id: id });
     }
     // Reissuing another hotel's terminal key stops that hotel's outlets.
     resolvePropertyScope(user, outlet.propertyId);

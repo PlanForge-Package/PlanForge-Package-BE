@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   Prisma,
   ReservationStatus,
@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
 import { formatDateOnly, parseDateOnly } from '../sync/reservation.mapper';
 import type { DailyReportDto } from './dto/reports.dto';
+import { badRequest, notFound } from '../common/errors';
 
 /** Longest queryable range. Any wider and one read pulls too many reservations. */
 const MAX_DAYS = 92;
@@ -226,14 +227,14 @@ export class ReportsService {
   /** Expands a range into dates. Reversed and overly wide ranges are rejected here. */
   private expandRange(from: string, to: string): string[] {
     if (to < from) {
-      throw new BadRequestException('종료일은 시작일보다 뒤여야 합니다.');
+      throw badRequest('END_BEFORE_START');
     }
 
     const dates: string[] = [];
     for (let cursor = from; cursor <= to; cursor = addDaysString(cursor, 1)) {
       dates.push(cursor);
       if (dates.length > MAX_DAYS) {
-        throw new BadRequestException(`조회 기간은 최대 ${MAX_DAYS}일입니다.`);
+        throw badRequest('RANGE_TOO_LONG', { days: MAX_DAYS });
       }
     }
     return dates;
@@ -242,12 +243,12 @@ export class ReportsService {
   private async resolveProperty(requested: string | undefined, user: AuthUser): Promise<Property> {
     const propertyId = resolvePropertyScope(user, requested);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
     return property;
   }

@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, TraceStatus, type ReservationTrace } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +6,7 @@ import { assertWithinScope, resolvePropertyScope } from '../properties/property-
 import { parseDateOnly } from '../sync/reservation.mapper';
 import type { CreateTraceDto, ListTracesDto } from './dto/traces.dto';
 import { toDateString, todayString } from '../common/date';
+import { badRequest, conflict, notFound } from '../common/errors';
 
 const TRACE_INCLUDE = {
   reservation: {
@@ -88,9 +84,9 @@ export class TracesService {
      */
     const dueDate = parseDateOnly(dto.dueDate);
     if (dueDate > reservation.departureDate) {
-      throw new BadRequestException(
-        `출발일(${toDateString(reservation.departureDate)}) 이후 날짜에는 지시를 걸 수 없습니다.`,
-      );
+      throw badRequest('TRACE_AFTER_DEPARTURE', {
+        departure: toDateString(reservation.departureDate),
+      });
     }
 
     return this.prisma.reservationTrace.create({
@@ -110,12 +106,12 @@ export class TracesService {
   async complete(id: string, user: AuthUser): Promise<ReservationTrace> {
     const trace = await this.prisma.reservationTrace.findUnique({ where: { id } });
     if (!trace) {
-      throw new NotFoundException(`지시를 찾을 수 없습니다: ${id}`);
+      throw notFound('TRACE_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, trace.propertyId);
 
     if (trace.status === TraceStatus.DONE) {
-      throw new ConflictException('이미 처리된 지시입니다.');
+      throw conflict('TRACE_ALREADY_DONE');
     }
 
     return this.prisma.reservationTrace.update({
@@ -134,12 +130,12 @@ export class TracesService {
   async remove(id: string, user: AuthUser) {
     const trace = await this.prisma.reservationTrace.findUnique({ where: { id } });
     if (!trace) {
-      throw new NotFoundException(`지시를 찾을 수 없습니다: ${id}`);
+      throw notFound('TRACE_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, trace.propertyId);
 
     if (trace.status === TraceStatus.DONE) {
-      throw new ConflictException('처리된 지시는 지울 수 없습니다.');
+      throw conflict('TRACE_DONE_NOT_DELETABLE');
     }
 
     await this.prisma.reservationTrace.delete({ where: { id } });
@@ -152,7 +148,7 @@ export class TracesService {
       select: { id: true, propertyId: true, departureDate: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: reservationId });
     }
     assertWithinScope(user, reservation.propertyId);
     return reservation;

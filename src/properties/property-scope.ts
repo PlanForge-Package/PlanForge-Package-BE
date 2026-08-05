@@ -1,5 +1,5 @@
-import { ForbiddenException } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.constants';
+import { forbidden } from '../common/errors';
 
 /**
  * Decides which hotels a request may see.
@@ -21,7 +21,7 @@ export function resolvePropertyScope(user: AuthUser, requested?: string): string
   }
 
   if (requested && requested !== assigned) {
-    throw new ForbiddenException('다른 호텔의 자료에는 접근할 수 없습니다.');
+    throw forbidden('OTHER_PROPERTY_FORBIDDEN');
   }
 
   return assigned;
@@ -35,6 +35,6 @@ export function resolvePropertyScope(user: AuthUser, requested?: string): string
  */
 export function assertWithinScope(user: AuthUser, propertyId: string): void {
   if (user.propertyId && user.propertyId !== propertyId) {
-    throw new ForbiddenException('다른 호텔의 자료에는 접근할 수 없습니다.');
+    throw forbidden('OTHER_PROPERTY_FORBIDDEN');
   }
 }

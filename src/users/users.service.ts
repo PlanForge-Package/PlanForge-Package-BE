@@ -1,14 +1,10 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateUserDto, ListUsersDto, ResetPasswordDto, UpdateUserDto } from './dto/users.dto';
 import { isUniqueViolation } from '../common/prisma-errors';
+import { badRequest, conflict, notFound } from '../common/errors';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -64,7 +60,7 @@ export class UsersService {
   async findOne(id: string): Promise<PublicUser> {
     const user = await this.prisma.user.findUnique({ where: { id }, select: PUBLIC_FIELDS });
     if (!user) {
-      throw new NotFoundException(`계정을 찾을 수 없습니다: ${id}`);
+      throw notFound('USER_NOT_FOUND', { id: id });
     }
     return user;
   }
@@ -88,7 +84,7 @@ export class UsersService {
     } catch (error) {
       // A duplicate email is something the user can fix. It is not leaked as a 500.
       if (isUniqueViolation(error, 'email')) {
-        throw new ConflictException('이미 사용 중인 이메일입니다.');
+        throw conflict('USER_EMAIL_TAKEN');
       }
       throw error;
     }
@@ -103,16 +99,16 @@ export class UsersService {
   async update(id: string, dto: UpdateUserDto, actorId: string): Promise<PublicUser> {
     const target = await this.prisma.user.findUnique({ where: { id } });
     if (!target) {
-      throw new NotFoundException(`계정을 찾을 수 없습니다: ${id}`);
+      throw notFound('USER_NOT_FOUND', { id: id });
     }
 
     const isSelf = target.id === actorId;
 
     if (isSelf && dto.active === false) {
-      throw new BadRequestException('자기 계정은 비활성화할 수 없습니다.');
+      throw badRequest('USER_SELF_DEACTIVATE');
     }
     if (isSelf && dto.role !== undefined && dto.role !== target.role) {
-      throw new BadRequestException('자기 역할은 변경할 수 없습니다. 다른 관리자에게 요청하세요.');
+      throw badRequest('USER_SELF_ROLE');
     }
 
     const losesAdmin =
@@ -120,9 +116,7 @@ export class UsersService {
       ((dto.role !== undefined && dto.role !== UserRole.ADMIN) || dto.active === false);
 
     if (losesAdmin && (await this.countActiveAdmins()) <= 1) {
-      throw new BadRequestException(
-        '마지막 관리자입니다. 다른 관리자를 먼저 지정한 뒤 변경하세요.',
-      );
+      throw badRequest('USER_LAST_ADMIN');
     }
 
     if (dto.propertyId !== undefined && dto.propertyId !== '') {
@@ -146,7 +140,7 @@ export class UsersService {
   async resetPassword(id: string, dto: ResetPasswordDto): Promise<{ ok: true }> {
     const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!user) {
-      throw new NotFoundException(`계정을 찾을 수 없습니다: ${id}`);
+      throw notFound('USER_NOT_FOUND', { id: id });
     }
 
     await this.prisma.user.update({
@@ -170,14 +164,14 @@ export class UsersService {
   ): Promise<{ ok: true }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('계정을 찾을 수 없습니다.');
+      throw notFound('USER_NOT_FOUND_PLAIN');
     }
 
     if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
-      throw new BadRequestException('현재 비밀번호가 올바르지 않습니다.');
+      throw badRequest('USER_CURRENT_PASSWORD_WRONG');
     }
     if (await bcrypt.compare(newPassword, user.passwordHash)) {
-      throw new BadRequestException('새 비밀번호가 현재 비밀번호와 같습니다.');
+      throw badRequest('USER_PASSWORD_UNCHANGED');
     }
 
     await this.prisma.user.update({
@@ -200,7 +194,7 @@ export class UsersService {
       select: { id: true },
     });
     if (!property) {
-      throw new BadRequestException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw badRequest('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
   }
 }

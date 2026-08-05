@@ -187,7 +187,9 @@ describe('PosService — 룸차지', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.postCharge(OUTLET, CHARGE)).rejects.toThrow(/연결되지 않은/);
+    await expect(service.postCharge(OUTLET, CHARGE)).rejects.toMatchObject({
+      response: { code: 'POS_RESERVATION_NOT_LINKED' },
+    });
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
@@ -201,7 +203,9 @@ describe('PosService — 룸차지', () => {
     });
     const service = await buildService(prisma, core);
 
-    await expect(service.postCharge(OUTLET, CHARGE)).rejects.toThrow(/프런트에 문의/);
+    await expect(service.postCharge(OUTLET, CHARGE)).rejects.toMatchObject({
+      response: { code: 'POS_FOLIO_CLOSED_ROOM' },
+    });
   });
 
   // If one outlet key could charge another hotel's rooms, it would open the whole chain.
@@ -220,7 +224,9 @@ describe('PosService — 룸차지', () => {
     const prisma = buildPrisma({ txPosting: { findFirst: jest.fn().mockResolvedValue(null) } });
     const service = await buildService(prisma);
 
-    await expect(service.postCharge(OUTLET, CHARGE)).rejects.toThrow(/확인하지 못했습니다/);
+    await expect(service.postCharge(OUTLET, CHARGE)).rejects.toMatchObject({
+      response: { code: 'POS_CHARGE_NOT_MIRRORED' },
+    });
   });
 });
 
@@ -337,7 +343,9 @@ describe('PosService — 취소', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.voidCharge(OUTLET, { reference: 'CHK-1001' })).rejects.toThrow(/마감/);
+    await expect(service.voidCharge(OUTLET, { reference: 'CHK-1001' })).rejects.toMatchObject({
+      response: { code: 'POS_FOLIO_CLOSED' },
+    });
   });
 
   it('OPERA 와 연결되지 않은 거래는 취소할 수 없다', async () => {
@@ -347,9 +355,9 @@ describe('PosService — 취소', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.voidCharge(OUTLET, { reference: 'CHK-1001' })).rejects.toThrow(
-      /연결되지 않은/,
-    );
+    await expect(service.voidCharge(OUTLET, { reference: 'CHK-1001' })).rejects.toMatchObject({
+      response: { code: 'POS_POSTING_NOT_LINKED' },
+    });
     expect(core.voidPosting).not.toHaveBeenCalled();
   });
 });

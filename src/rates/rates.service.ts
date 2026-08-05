@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { type Property } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
@@ -6,6 +6,7 @@ import type { CorePackage, CoreRatePlan } from '../core/core.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
 import { withSyncLog } from '../sync/sync-log';
+import { badRequest, notFound } from '../common/errors';
 import type {
   CreatePackageDto,
   CreateRatePlanDto,
@@ -40,7 +41,7 @@ export class RatesService {
     const property = await this.resolveProperty(query.propertyId, user);
 
     if (query.departureDate <= query.arrivalDate) {
-      throw new BadRequestException('출발일은 도착일보다 뒤여야 합니다.');
+      throw badRequest('DEPARTURE_BEFORE_ARRIVAL');
     }
 
     const result = await this.core.getRates({
@@ -81,7 +82,7 @@ export class RatesService {
     const baseAmounts = await this.checkAmounts(property, dto.baseAmounts);
 
     if (dto.sellEndDate < dto.sellStartDate) {
-      throw new BadRequestException('판매 종료일은 시작일보다 뒤여야 합니다.');
+      throw badRequest('RATE_SELL_END_BEFORE_START');
     }
 
     return this.delegate('createRatePlan', dto.ratePlanCode, () =>
@@ -112,7 +113,7 @@ export class RatesService {
       : undefined;
 
     if (dto.sellStartDate && dto.sellEndDate && dto.sellEndDate < dto.sellStartDate) {
-      throw new BadRequestException('판매 종료일은 시작일보다 뒤여야 합니다.');
+      throw badRequest('RATE_SELL_END_BEFORE_START');
     }
 
     return this.delegate('updateRatePlan', ratePlanCode, () =>
@@ -141,12 +142,12 @@ export class RatesService {
     const amounts = await this.checkAmounts(property, dto.amounts);
 
     if (dto.endDate < dto.startDate) {
-      throw new BadRequestException('종료일은 시작일보다 뒤여야 합니다.');
+      throw badRequest('END_BEFORE_START');
     }
     // Picking every weekday is the same as picking none. An empty array means daily.
     const daysOfWeek = dto.daysOfWeek?.length === 7 ? undefined : dto.daysOfWeek;
     if (daysOfWeek && new Set(daysOfWeek).size !== daysOfWeek.length) {
-      throw new BadRequestException('요일이 중복되었습니다.');
+      throw badRequest('RATE_WEEKDAY_DUPLICATE');
     }
 
     return this.delegate('addRateSeason', ratePlanCode, () =>
@@ -225,7 +226,7 @@ export class RatesService {
   ): Promise<Record<string, number>> {
     const entries = Object.entries(amounts ?? {});
     if (entries.length === 0) {
-      throw new BadRequestException('객실 타입별 금액이 비어 있습니다.');
+      throw badRequest('RATE_AMOUNTS_EMPTY');
     }
 
     const roomTypes = await this.prisma.roomType.findMany({
@@ -237,13 +238,14 @@ export class RatesService {
     const checked: Record<string, number> = {};
     for (const [code, raw] of entries) {
       if (!known.has(code)) {
-        throw new BadRequestException(
-          `알 수 없는 객실 타입입니다: ${code}. 가능한 값: ${[...known].sort().join(', ')}`,
-        );
+        throw badRequest('RATE_ROOM_TYPE_UNKNOWN', {
+          code: code,
+          allowed: [...known].sort().join(', '),
+        });
       }
       const amount = Number(raw);
       if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 0) {
-        throw new BadRequestException(`${code} 금액은 0 이상의 정수여야 합니다: ${String(raw)}`);
+        throw badRequest('RATE_AMOUNT_INVALID', { code: code, value: String(raw) });
       }
       checked[code] = amount;
     }
@@ -253,12 +255,12 @@ export class RatesService {
   private async resolveProperty(requested: string | undefined, user: AuthUser): Promise<Property> {
     const propertyId = resolvePropertyScope(user, requested);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
     return property;
   }

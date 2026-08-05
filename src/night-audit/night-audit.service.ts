@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { FolioStatus, Prisma, ReservationStatus, type Property } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
 import { BookingService } from '../reservations/booking.service';
 import { formatDateOnly, parseDateOnly } from '../sync/reservation.mapper';
+import { badRequest, notFound } from '../common/errors';
 
 /** Kinds of item that block the close, so the screen can act on each differently. */
 export type AuditItemKind =
@@ -189,7 +190,7 @@ export class NightAuditService {
    */
   async markNoShow(reservationId: string, reason: string | undefined, user: AuthUser) {
     if (!reservationId) {
-      throw new BadRequestException('대상 예약을 지정해 주세요.');
+      throw badRequest('RESERVATION_TARGET_REQUIRED');
     }
     return this.booking.noShow(reservationId, reason, user);
   }
@@ -197,12 +198,12 @@ export class NightAuditService {
   private async resolveProperty(requested: string | undefined, user: AuthUser): Promise<Property> {
     const propertyId = resolvePropertyScope(user, requested);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
     return property;
   }

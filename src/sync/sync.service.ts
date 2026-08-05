@@ -237,7 +237,9 @@ export class SyncService {
 
   private async logFailure(reservation: CoreReservation, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
-    this.logger.warn(`Reservation sync failed reservationId=${reservation.reservationId}: ${message}`);
+    this.logger.warn(
+      `Reservation sync failed reservationId=${reservation.reservationId}: ${message}`,
+    );
 
     await this.prisma.syncLog.create({
       data: {

@@ -184,7 +184,9 @@ describe('FoliosService — 위임', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.addPosting('res-1', 1, CHARGE, ACTOR)).rejects.toThrow(/동기화/);
+    await expect(service.addPosting('res-1', 1, CHARGE, ACTOR)).rejects.toMatchObject({
+      response: { code: 'RESERVATION_NOT_LINKED' },
+    });
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
@@ -237,7 +239,7 @@ describe('FoliosService — 이관', () => {
 
     await expect(
       service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-    ).rejects.toThrow(/결제로 생긴 거래/);
+    ).rejects.toMatchObject({ response: { code: 'POSTING_FROM_PAYMENT' } });
     expect(core.transferPosting).not.toHaveBeenCalled();
   });
 
@@ -250,7 +252,7 @@ describe('FoliosService — 이관', () => {
 
     await expect(
       service.transferPosting('res-1', 'post-1', { toWindow: 2 }, ACTOR),
-    ).rejects.toThrow(/동기화/);
+    ).rejects.toMatchObject({ response: { code: 'POSTING_NOT_LINKED' } });
   });
 
   it('다른 예약의 거래는 옮기지 않는다', async () => {
@@ -292,7 +294,7 @@ describe('FoliosService — 라우팅 지시', () => {
 
     await expect(
       service.setRouting('res-1', { transactionCode: '1000', targetWindow: 5 }, ACTOR),
-    ).rejects.toThrow(/열려 있지 않습니다/);
+    ).rejects.toMatchObject({ response: { code: 'FOLIO_TARGET_WINDOW_NOT_OPEN' } });
   });
 
   it('없는 지시는 해제하지 못한다', async () => {

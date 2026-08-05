@@ -169,7 +169,9 @@ describe('NightAuditService — 점검표', () => {
     const service = await buildService(buildPrisma(), buildCore());
     const scoped: AuthUser = { ...HQ, propertyId: 'prop-2' };
 
-    await expect(service.review('prop-1', scoped)).rejects.toThrow(/접근할 수 없습니다/);
+    await expect(service.review('prop-1', scoped)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
   });
 });
 
@@ -187,7 +189,9 @@ describe('NightAuditService — 노쇼', () => {
     const noShow = jest.fn();
     const service = await buildService(buildPrisma(), buildCore(), [], { noShow });
 
-    await expect(service.markNoShow('', undefined, HQ)).rejects.toThrow(/지정해 주세요/);
+    await expect(service.markNoShow('', undefined, HQ)).rejects.toMatchObject({
+      response: { code: 'RESERVATION_TARGET_REQUIRED' },
+    });
     expect(noShow).not.toHaveBeenCalled();
   });
 });

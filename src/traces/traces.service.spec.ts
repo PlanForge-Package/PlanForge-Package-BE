@@ -92,9 +92,9 @@ describe('TracesService — 등록', () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
 
-    await expect(service.create('res-1', { ...DTO, dueDate: '2026-08-11' }, ACTOR)).rejects.toThrow(
-      /출발일/,
-    );
+    await expect(
+      service.create('res-1', { ...DTO, dueDate: '2026-08-11' }, ACTOR),
+    ).rejects.toMatchObject({ response: { code: 'TRACE_AFTER_DEPARTURE' } });
   });
 
   it('출발일 당일은 받는다', async () => {
@@ -131,7 +131,9 @@ describe('TracesService — 등록', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.create('res-1', DTO, ACTOR)).rejects.toThrow(/접근할 수 없습니다/);
+    await expect(service.create('res-1', DTO, ACTOR)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
   });
 });
 
@@ -245,7 +247,9 @@ describe('TracesService — 처리·삭제', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.complete('trace-1', ACTOR)).rejects.toThrow(/접근할 수 없습니다/);
+    await expect(service.complete('trace-1', ACTOR)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
   });
 });
 

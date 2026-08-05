@@ -286,7 +286,9 @@ describe('BlocksService — 다른 호텔 접근', () => {
     const service = await buildService(prisma, core);
     const other: AuthUser = { ...HQ, propertyId: 'prop-2' };
 
-    await expect(service.get('blk-1', other)).rejects.toThrow(/접근할 수 없습니다/);
+    await expect(service.get('blk-1', other)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
     expect(core.getBlock).not.toHaveBeenCalled();
   });
 });

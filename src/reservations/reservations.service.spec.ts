@@ -183,7 +183,7 @@ describe('ReservationsService', () => {
       const service = await buildService(prisma, buildDoorLock(), core);
 
       await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
-        /도착일/,
+        /도착일이 아직/,
       );
       expect(tx.reservation.update).not.toHaveBeenCalled();
       expect(tx.room.updateMany).not.toHaveBeenCalled();
@@ -201,9 +201,9 @@ describe('ReservationsService', () => {
       const core = buildCore();
       const service = await buildService(prisma, buildDoorLock(), core);
 
-      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
-        /동기화/,
-      );
+      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toMatchObject({
+        response: { code: 'RESERVATION_NOT_LINKED' },
+      });
       expect(core.checkInReservation).not.toHaveBeenCalled();
     });
 
@@ -227,9 +227,9 @@ describe('ReservationsService', () => {
       prisma.room.findUnique.mockResolvedValue({ ...CLEAN_ROOM, occupied: true });
 
       const service = await buildService(prisma);
-      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
-        /사용 중/,
-      );
+      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toMatchObject({
+        response: { code: 'ROOM_OCCUPIED' },
+      });
     });
 
     it('판매 불가 객실은 배정하지 않는다', async () => {
@@ -242,9 +242,9 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(prisma);
-      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
-        /판매 불가/,
-      );
+      await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toMatchObject({
+        response: { code: 'ROOM_NOT_SELLABLE' },
+      });
     });
 
     /*
@@ -312,7 +312,9 @@ describe('ReservationsService', () => {
       prisma.reservation.findUnique.mockResolvedValue(BASE_RESERVATION);
 
       const service = await buildService(prisma);
-      await expect(service.checkIn('res-1', {}, ACTOR)).rejects.toThrow(/객실 번호가 없습니다/);
+      await expect(service.checkIn('res-1', {}, ACTOR)).rejects.toMatchObject({
+        response: { code: 'ROOM_NUMBER_REQUIRED' },
+      });
     });
 
     it('없는 예약이면 404 를 낸다', async () => {
@@ -407,7 +409,7 @@ describe('ReservationsService', () => {
       const core = buildCore();
       const service = await buildService(prisma, doorLock, core);
 
-      await expect(service.checkOut('res-1', {}, ACTOR)).rejects.toThrow(/잠금장치/);
+      await expect(service.checkOut('res-1', {}, ACTOR)).rejects.toThrow(/잠금장치 연결 실패/);
       expect(core.checkOutReservation).not.toHaveBeenCalled();
       expect(tx.folio.updateMany).not.toHaveBeenCalled();
     });
@@ -421,7 +423,9 @@ describe('ReservationsService', () => {
       });
 
       const service = await buildService(prisma);
-      await expect(service.checkOut('res-1', {}, ACTOR)).rejects.toThrow(/미결제 잔액/);
+      await expect(service.checkOut('res-1', {}, ACTOR)).rejects.toMatchObject({
+        response: { code: 'BALANCE_OUTSTANDING' },
+      });
       expect(tx.folio.updateMany).not.toHaveBeenCalled();
     });
 
@@ -491,9 +495,9 @@ describe('ReservationsService — 객실 공유', () => {
 
     const service = await buildService(prisma);
 
-    await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
-      /사용 중/,
-    );
+    await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toMatchObject({
+      response: { code: 'ROOM_OCCUPIED' },
+    });
   });
 
   // Even within a group, anyone but the partner in that room is a stranger to it.
@@ -509,8 +513,8 @@ describe('ReservationsService — 객실 공유', () => {
 
     const service = await buildService(prisma);
 
-    await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toThrow(
-      /사용 중/,
-    );
+    await expect(service.checkIn('res-1', { roomNumber: '1203' }, ACTOR)).rejects.toMatchObject({
+      response: { code: 'ROOM_OCCUPIED' },
+    });
   });
 });

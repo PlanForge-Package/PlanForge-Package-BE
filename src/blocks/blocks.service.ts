@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, SyncStatus, type Block, type BlockAllotment, type Property } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
@@ -9,6 +9,7 @@ import { parseDateOnly } from '../sync/reservation.mapper';
 import { toBlockStatus, toCoreBlockStatus } from './block.mapper';
 import type { CreateBlockDto, ListBlocksDto, UpdateBlockDto } from './dto/blocks.dto';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
+import { badRequest, notFound } from '../common/errors';
 
 type BlockWithAllotments = Block & { allotments: BlockAllotment[] };
 
@@ -111,7 +112,7 @@ export class BlocksService {
       // A cutoff after the start date releases nothing, making the setting meaningless.
       const start = block.startDate.toISOString().slice(0, 10);
       if (dto.cutoffDate > start) {
-        throw new BadRequestException('컷오프 날짜는 블록 시작일보다 앞이어야 합니다.');
+        throw badRequest('BLOCK_CUTOFF_AFTER_START');
       }
     }
 
@@ -197,15 +198,13 @@ export class BlocksService {
       include: { property: true },
     });
     if (!block) {
-      throw new NotFoundException(`블록을 찾을 수 없습니다: ${id}`);
+      throw notFound('BLOCK_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, block.propertyId);
 
     // A block OPERA does not have cannot be fixed here; local-only diverges.
     if (!block.operaBlockId) {
-      throw new BadRequestException(
-        'OPERA 와 연결되지 않은 블록입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
-      );
+      throw badRequest('BLOCK_NOT_LINKED');
     }
 
     return { block, property: block.property };
@@ -214,23 +213,23 @@ export class BlocksService {
   private async resolveProperty(requested: string | undefined, user: AuthUser): Promise<Property> {
     const propertyId = resolvePropertyScope(user, requested);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
     return property;
   }
 
   private assertDateRange(start: string, end: string, cutoff?: string): void {
     if (end <= start) {
-      throw new BadRequestException('종료일은 시작일보다 뒤여야 합니다.');
+      throw badRequest('END_BEFORE_START');
     }
     // A cutoff after the start date has already passed its release point and does nothing.
     if (cutoff && cutoff > start) {
-      throw new BadRequestException('컷오프 날짜는 블록 시작일보다 앞이어야 합니다.');
+      throw badRequest('BLOCK_CUTOFF_AFTER_START');
     }
   }
 

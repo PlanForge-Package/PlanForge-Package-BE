@@ -218,9 +218,9 @@ describe('HousekeepingService — 배정·진행', () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'x', active: false, propertyId: 'prop-1' });
     const service = await buildService(prisma, buildCore());
 
-    await expect(service.assignTask('task-1', { assignedToId: 'x' }, MANAGER)).rejects.toThrow(
-      /배정할 수 없는 계정/,
-    );
+    await expect(
+      service.assignTask('task-1', { assignedToId: 'x' }, MANAGER),
+    ).rejects.toMatchObject({ response: { code: 'TASK_ASSIGNEE_INVALID' } });
   });
 
   // Assigned to another hotel's staff, that person never sees the task on their screen.
@@ -229,9 +229,9 @@ describe('HousekeepingService — 배정·진행', () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'x', active: true, propertyId: 'prop-2' });
     const service = await buildService(prisma, buildCore());
 
-    await expect(service.assignTask('task-1', { assignedToId: 'x' }, MANAGER)).rejects.toThrow(
-      /다른 호텔 소속/,
-    );
+    await expect(
+      service.assignTask('task-1', { assignedToId: 'x' }, MANAGER),
+    ).rejects.toMatchObject({ response: { code: 'TASK_ASSIGNEE_OTHER_PROPERTY' } });
   });
 
   it('빈 값이면 배정을 해제한다', async () => {
@@ -250,7 +250,7 @@ describe('HousekeepingService — 배정·진행', () => {
 
     await expect(
       service.updateTask('task-1', { status: TaskStatus.DONE }, CLEANER),
-    ).rejects.toThrow(/본인에게 배정된 작업만/);
+    ).rejects.toMatchObject({ response: { code: 'TASK_NOT_MINE' } });
   });
 
   it('본인 작업은 바꿀 수 있다', async () => {

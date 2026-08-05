@@ -125,7 +125,9 @@ describe('DoorLockService — 발급', () => {
     prisma.reservation.findUnique.mockResolvedValue(futureStay({ assignedRoomNumber: null }));
     const service = await buildService(prisma);
 
-    await expect(service.issue('res-1', {}, HQ)).rejects.toThrow(/배정된 객실/);
+    await expect(service.issue('res-1', {}, HQ)).rejects.toMatchObject({
+      response: { code: 'KEY_NO_ROOM' },
+    });
   });
 
   // Reissuing after a loss is pointless if the old card is still alive.
@@ -177,7 +179,9 @@ describe('DoorLockService — 발급', () => {
     driver.encode.mockRejectedValue(new DoorLockError('timeout', false));
     const service = await buildService(prisma, driver);
 
-    await expect(service.issue('res-1', {}, HQ)).rejects.toThrow(/카드가 만들어졌을 수 있으니/);
+    await expect(service.issue('res-1', {}, HQ)).rejects.toMatchObject({
+      response: { code: 'KEY_ISSUE_UNREACHABLE' },
+    });
     expect(prisma.roomKey.create).not.toHaveBeenCalled();
   });
 
@@ -196,7 +200,9 @@ describe('DoorLockService — 발급', () => {
     const service = await buildService(prisma);
     const scoped: AuthUser = { ...HQ, propertyId: 'prop-2' };
 
-    await expect(service.issue('res-1', {}, scoped)).rejects.toThrow(/접근할 수 없습니다/);
+    await expect(service.issue('res-1', {}, scoped)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
   });
 });
 
@@ -224,7 +230,9 @@ describe('DoorLockService — 무효화', () => {
     driver.revoke.mockRejectedValue(new Error('unreachable'));
     const service = await buildService(prisma, driver);
 
-    await expect(service.revoke('key-1', {}, HQ)).rejects.toThrow(/아직 열릴 수 있으니/);
+    await expect(service.revoke('key-1', {}, HQ)).rejects.toMatchObject({
+      response: { code: 'KEY_VOID_FAILED' },
+    });
     expect(prisma.roomKey.update).not.toHaveBeenCalled();
   });
 

@@ -1,9 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreatePropertyDto, UpdatePropertyDto } from './dto/properties.dto';
 import { assertWithinScope } from './property-scope';
 import { isUniqueViolation } from '../common/prisma-errors';
+import { conflict, notFound } from '../common/errors';
 
 @Injectable()
 export class PropertiesService {
@@ -28,7 +29,7 @@ export class PropertiesService {
   async findOne(id: string) {
     const property = await this.prisma.property.findUnique({ where: { id } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${id}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: id });
     }
     return property;
   }
@@ -63,7 +64,7 @@ export class PropertiesService {
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
-        throw new ConflictException('이미 등록된 OPERA 호텔 코드입니다.');
+        throw conflict('PROPERTY_CODE_TAKEN');
       }
       throw error;
     }

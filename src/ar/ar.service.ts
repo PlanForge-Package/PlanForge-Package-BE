@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   ArInvoiceStatus,
   ArTransactionType,
@@ -16,6 +11,7 @@ import { CoreClient } from '../core/core.client';
 import { mirrorFolios } from '../folios/folio-mirror';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
+import { badRequest, conflict, notFound } from '../common/errors';
 import type {
   AgingDto,
   CreateAccountDto,
@@ -92,7 +88,7 @@ export class ArService {
   async createAccount(dto: CreateAccountDto, user: AuthUser): Promise<ArAccount> {
     const propertyId = resolvePropertyScope(user, dto.propertyId);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const code = dto.code.trim().toUpperCase();
@@ -101,7 +97,7 @@ export class ArService {
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictException(`이미 있는 거래처 코드입니다: ${code}`);
+      throw conflict('AR_ACCOUNT_CODE_TAKEN', { code: code });
     }
 
     return this.prisma.arAccount.create({
@@ -206,41 +202,37 @@ export class ArService {
       include: { property: true, profile: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: reservationId });
     }
     assertWithinScope(user, reservation.propertyId);
 
     if (!reservation.operaReservationId) {
-      throw new BadRequestException(
-        'OPERA 와 연결되지 않은 예약입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
-      );
+      throw badRequest('RESERVATION_NOT_LINKED');
     }
 
     const account = await this.loadAccount(dto.accountId, user);
     if (account.propertyId !== reservation.propertyId) {
-      throw new BadRequestException('다른 호텔의 거래처로는 넘길 수 없습니다.');
+      throw badRequest('AR_ACCOUNT_OTHER_PROPERTY');
     }
     // Transferring to a suspended account piles up receivables with nobody to bill.
     if (!account.active) {
-      throw new BadRequestException(`중지된 거래처입니다: ${account.code}`);
+      throw badRequest('AR_ACCOUNT_SUSPENDED', { code: account.code });
     }
 
     const folio = await this.prisma.folio.findUnique({
       where: { reservationId_window: { reservationId, window: dto.window } },
     });
     if (!folio) {
-      throw new NotFoundException(`윈도 ${dto.window} 이 열려 있지 않습니다.`);
+      throw notFound('FOLIO_WINDOW_NOT_OPEN', { window: dto.window });
     }
     if (folio.status === 'CLOSED') {
-      throw new BadRequestException('마감된 폴리오는 넘길 수 없습니다.');
+      throw badRequest('FOLIO_CLOSED_NO_TRANSFER');
     }
 
     const amount = folio.balance;
     // Nothing to transfer at zero; a negative balance is owed back to the guest.
     if (amount.lessThanOrEqualTo(0)) {
-      throw new BadRequestException(
-        `넘길 잔액이 없습니다: ${amount.toString()}. 잔액이 남은 창구만 넘길 수 있습니다.`,
-      );
+      throw badRequest('AR_NOTHING_TO_TRANSFER', { amount: amount.toString() });
     }
 
     /*
@@ -253,9 +245,10 @@ export class ArService {
       const current = new Prisma.Decimal(await this.balanceOf(account.id));
       const after = current.add(amount);
       if (after.greaterThan(account.creditLimit)) {
-        throw new BadRequestException(
-          `여신 한도를 넘습니다. 한도 ${account.creditLimit.toString()}, 이관 후 ${after.toString()}`,
-        );
+        throw badRequest('AR_CREDIT_LIMIT_EXCEEDED', {
+          limit: account.creditLimit.toString(),
+          after: after.toString(),
+        });
       }
     }
 
@@ -308,9 +301,7 @@ export class ArService {
 
     const requested = dto.allocations ?? [];
     if (requested.length > 0 && dto.autoApply === 'true') {
-      throw new BadRequestException(
-        '자동 배분과 직접 배분을 함께 쓸 수 없습니다. 하나만 골라 주세요.',
-      );
+      throw badRequest('AR_ALLOCATION_MODE_CONFLICT');
     }
 
     // Open invoices and what they still owe. Allocation happens only within these.
@@ -329,29 +320,29 @@ export class ArService {
       for (const row of plan) {
         const left = outstanding.get(row.invoiceId);
         if (left === undefined) {
-          throw new BadRequestException(
-            `이 거래처의 청구서가 아니거나 이미 정리된 청구서입니다: ${row.invoiceId}`,
-          );
+          throw badRequest('AR_ALLOCATION_INVOICE_INVALID', { invoiceId: row.invoiceId });
         }
         if (row.amount.greaterThan(left)) {
-          throw new BadRequestException(
-            `청구서에 남은 금액보다 많이 붙일 수 없습니다. 남은 금액 ${left.toString()}, 붙이려는 금액 ${row.amount.toString()}`,
-          );
+          throw badRequest('AR_ALLOCATION_OVER_OUTSTANDING', {
+            outstanding: left.toString(),
+            amount: row.amount.toString(),
+          });
         }
       }
 
       const seen = new Set(plan.map((row) => row.invoiceId));
       if (seen.size !== plan.length) {
-        throw new BadRequestException('같은 청구서를 두 번 지정했습니다.');
+        throw badRequest('AR_ALLOCATION_DUPLICATE_INVOICE');
       }
     }
 
     const allocated = plan.reduce((sum, row) => sum.add(row.amount), new Prisma.Decimal(0));
     // Allocating more than was received clears invoices with money we never got.
     if (allocated.greaterThan(amount)) {
-      throw new BadRequestException(
-        `입금액보다 많이 배분할 수 없습니다. 입금 ${amount.toString()}, 배분 ${allocated.toString()}`,
-      );
+      throw badRequest('AR_ALLOCATION_OVER_PAYMENT', {
+        payment: amount.toString(),
+        allocated: allocated.toString(),
+      });
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -589,14 +580,12 @@ export class ArService {
       select: { id: true, amount: true },
     });
     if (unbilled.length === 0) {
-      throw new BadRequestException('청구할 거래가 없습니다.');
+      throw badRequest('AR_NOTHING_TO_INVOICE');
     }
 
     const total = unbilled.reduce((sum, row) => sum.add(row.amount), new Prisma.Decimal(0));
     if (total.lessThanOrEqualTo(0)) {
-      throw new BadRequestException(
-        `청구 합계가 ${total.toString()} 입니다. 받을 금액이 있을 때만 청구서를 만듭니다.`,
-      );
+      throw badRequest('AR_INVOICE_NOT_POSITIVE', { total: total.toString() });
     }
 
     const number = dto.number?.trim() || (await this.nextInvoiceNumber(account.propertyId));
@@ -636,12 +625,12 @@ export class ArService {
   async updateInvoiceStatus(id: string, dto: UpdateInvoiceStatusDto, user: AuthUser) {
     const invoice = await this.prisma.arInvoice.findUnique({ where: { id } });
     if (!invoice) {
-      throw new NotFoundException(`청구서를 찾을 수 없습니다: ${id}`);
+      throw notFound('AR_INVOICE_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, invoice.propertyId);
 
     if (invoice.status === ArInvoiceStatus.VOID) {
-      throw new ConflictException('무효 처리된 청구서는 되돌릴 수 없습니다.');
+      throw conflict('AR_INVOICE_VOID_FINAL');
     }
 
     const now = new Date();
@@ -691,7 +680,7 @@ export class ArService {
       },
     });
     if (!invoice) {
-      throw new NotFoundException(`청구서를 찾을 수 없습니다: ${id}`);
+      throw notFound('AR_INVOICE_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, invoice.propertyId);
 
@@ -724,7 +713,7 @@ export class ArService {
       include: ACCOUNT_INCLUDE,
     });
     if (!account) {
-      throw new NotFoundException(`거래처를 찾을 수 없습니다: ${id}`);
+      throw notFound('AR_ACCOUNT_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, account.propertyId);
     return account;

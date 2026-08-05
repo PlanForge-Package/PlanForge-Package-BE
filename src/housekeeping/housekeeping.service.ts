@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   Prisma,
   RoomStatus,
@@ -22,6 +22,7 @@ import type {
 import { fromOperaRoomStatus, toOperaRoomStatus } from './room-status.mapper';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 import { todayString } from '../common/date';
+import { badRequest, notFound } from '../common/errors';
 
 const TASK_INCLUDE = {
   room: { include: { roomType: true } },
@@ -48,7 +49,7 @@ export class HousekeepingService {
       include: { property: true },
     });
     if (!room) {
-      throw new NotFoundException(`객실을 찾을 수 없습니다: ${roomId}`);
+      throw notFound('ROOM_NOT_FOUND', { room: roomId });
     }
     assertWithinScope(user, room.propertyId);
 
@@ -56,7 +57,7 @@ export class HousekeepingService {
     const blocking =
       dto.status === RoomStatus.OUT_OF_ORDER || dto.status === RoomStatus.OUT_OF_SERVICE;
     if (room.occupied && blocking) {
-      throw new BadRequestException('재실 중인 객실은 판매 불가 상태로 변경할 수 없습니다.');
+      throw badRequest('ROOM_OCCUPIED_NO_OUT_OF_SALE');
     }
 
     const log = await this.startLog(room.number, { action: 'roomStatus', status: dto.status });
@@ -188,11 +189,11 @@ export class HousekeepingService {
     if (dto.assignedToId) {
       const assignee = await this.prisma.user.findUnique({ where: { id: dto.assignedToId } });
       if (!assignee || !assignee.active) {
-        throw new BadRequestException('배정할 수 없는 계정입니다.');
+        throw badRequest('TASK_ASSIGNEE_INVALID');
       }
       // Assigned to another hotel's staff, that person never sees the task on their screen.
       if (assignee.propertyId && assignee.propertyId !== task.propertyId) {
-        throw new BadRequestException('다른 호텔 소속 직원에게는 배정할 수 없습니다.');
+        throw badRequest('TASK_ASSIGNEE_OTHER_PROPERTY');
       }
     }
 
@@ -213,7 +214,7 @@ export class HousekeepingService {
     const task = await this.loadTask(taskId, user);
 
     if (user.role === UserRole.HOUSEKEEPING && task.assignedToId !== user.id) {
-      throw new BadRequestException('본인에게 배정된 작업만 변경할 수 있습니다.');
+      throw badRequest('TASK_NOT_MINE');
     }
 
     const now = new Date();
@@ -289,7 +290,7 @@ export class HousekeepingService {
   private async loadTask(taskId: string, user: AuthUser) {
     const task = await this.prisma.housekeepingTask.findUnique({ where: { id: taskId } });
     if (!task) {
-      throw new NotFoundException(`작업을 찾을 수 없습니다: ${taskId}`);
+      throw notFound('TASK_NOT_FOUND', { taskId: taskId });
     }
     assertWithinScope(user, task.propertyId);
     return task;
@@ -298,12 +299,12 @@ export class HousekeepingService {
   private async resolveProperty(requested: string | undefined, user: AuthUser): Promise<Property> {
     const propertyId = resolvePropertyScope(user, requested);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
     return property;
   }

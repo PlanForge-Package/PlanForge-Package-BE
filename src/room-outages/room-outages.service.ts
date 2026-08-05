@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   Prisma,
   ReservationStatus,
@@ -21,6 +16,7 @@ import { assertWithinScope, resolvePropertyScope } from '../properties/property-
 import { parseDateOnly } from '../sync/reservation.mapper';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 import { toDateString, todayString } from '../common/date';
+import { badRequest, conflict, notFound } from '../common/errors';
 import type {
   CreateRoomOutageDto,
   ListRoomOutagesDto,
@@ -103,24 +99,20 @@ export class RoomOutagesService {
     const property = await this.resolveProperty(dto.propertyId, user);
 
     if (dto.endDate < dto.startDate) {
-      throw new BadRequestException(
-        `종료일(${dto.endDate})이 시작일(${dto.startDate})보다 앞설 수 없습니다.`,
-      );
+      throw badRequest('OUTAGE_END_BEFORE_START', { end: dto.endDate, start: dto.startDate });
     }
 
     // Blocking a past range does not bring back rooms already sold. It only skews reports.
     const today = todayString();
     if (dto.endDate < today) {
-      throw new BadRequestException(
-        `이미 지난 기간(${dto.startDate} ~ ${dto.endDate})은 사용 불가로 등록할 수 없습니다.`,
-      );
+      throw badRequest('OUTAGE_IN_THE_PAST', { start: dto.startDate, end: dto.endDate });
     }
 
     const room = await this.prisma.room.findUnique({
       where: { propertyId_number: { propertyId: property.id, number: dto.roomNumber } },
     });
     if (!room) {
-      throw new NotFoundException(`객실을 찾을 수 없습니다: ${dto.roomNumber}`);
+      throw notFound('ROOM_NOT_FOUND', { room: dto.roomNumber });
     }
 
     const startDate = parseDateOnly(dto.startDate);
@@ -136,9 +128,11 @@ export class RoomOutagesService {
       },
     });
     if (overlapping) {
-      throw new ConflictException(
-        `객실 ${room.number} 는 ${toDateString(overlapping.startDate)} ~ ${toDateString(overlapping.endDate)} 기간에 이미 사용 불가입니다.`,
-      );
+      throw conflict('OUTAGE_OVERLAPS', {
+        room: room.number,
+        start: toDateString(overlapping.startDate),
+        end: toDateString(overlapping.endDate),
+      });
     }
 
     /*
@@ -158,16 +152,15 @@ export class RoomOutagesService {
       select: { confirmationNumber: true, id: true },
     });
     if (assigned) {
-      throw new ConflictException(
-        `해당 기간에 예약 ${assigned.confirmationNumber ?? assigned.id} 가 객실 ${room.number} 에 배정되어 있습니다. 객실을 먼저 변경해 주세요.`,
-      );
+      throw conflict('OUTAGE_ROOM_ASSIGNED', {
+        reservation: assigned.confirmationNumber ?? assigned.id,
+        room: room.number,
+      });
     }
 
     // Blocked if a guest is in the room today. A future range clears by then.
     if (room.occupied && dto.startDate <= today) {
-      throw new ConflictException(
-        `객실 ${room.number} 는 재실 중이라 지금부터 사용 불가로 둘 수 없습니다.`,
-      );
+      throw conflict('OUTAGE_ROOM_OCCUPIED', { room: room.number });
     }
 
     const returnStatus = dto.returnStatus ?? RoomStatus.DIRTY;
@@ -239,12 +232,12 @@ export class RoomOutagesService {
       include: { property: true, room: true },
     });
     if (!outage) {
-      throw new NotFoundException(`사용 불가 기록을 찾을 수 없습니다: ${id}`);
+      throw notFound('OUTAGE_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, outage.propertyId);
 
     if (outage.releasedAt) {
-      throw new ConflictException('이미 해제된 기록입니다.');
+      throw conflict('OUTAGE_ALREADY_RELEASED');
     }
 
     const log = await this.startLog(outage.room.number, {
@@ -287,12 +280,12 @@ export class RoomOutagesService {
   private async resolveProperty(requested: string | undefined, user: AuthUser): Promise<Property> {
     const propertyId = resolvePropertyScope(user, requested);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
     return property;
   }

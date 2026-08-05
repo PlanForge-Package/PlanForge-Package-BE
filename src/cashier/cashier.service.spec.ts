@@ -255,9 +255,9 @@ describe('CashierService — 마감', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.close('shift-1', { countedCash: 0 }, ACTOR)).rejects.toThrow(
-      /자기 근무조만/,
-    );
+    await expect(service.close('shift-1', { countedCash: 0 }, ACTOR)).rejects.toMatchObject({
+      response: { code: 'SHIFT_NOT_MINE' },
+    });
   });
 
   it('이미 마감된 조는 다시 마감하지 않는다', async () => {
@@ -286,8 +286,8 @@ describe('CashierService — 마감', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.close('shift-1', { countedCash: 0 }, ACTOR)).rejects.toThrow(
-      /접근할 수 없습니다/,
-    );
+    await expect(service.close('shift-1', { countedCash: 0 }, ACTOR)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
   });
 });

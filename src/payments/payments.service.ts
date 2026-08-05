@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { FolioStatus, PaymentMethod, PaymentStatus, Prisma, type Payment } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
@@ -15,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope } from '../properties/property-scope';
 import { PAYMENT_DRIVER, PaymentError, type PaymentDriver } from './payment.driver';
 import type { AuthorizePaymentDto, CapturePaymentDto, RefundPaymentDto } from './dto/payments.dto';
+import { badRequest, conflict, notFound } from '../common/errors';
 
 /** Payment transaction code, used when posting to the folio. */
 const PAYMENT_TRANSACTION_CODE = '5000';
@@ -82,10 +76,10 @@ export class PaymentsService {
       where: { reservationId_window: { reservationId, window } },
     });
     if (!folio) {
-      throw new NotFoundException(`폴리오를 찾을 수 없습니다: 윈도 ${window}`);
+      throw notFound('FOLIO_WINDOW_NOT_FOUND', { window: window });
     }
     if (folio.status === FolioStatus.CLOSED) {
-      throw new BadRequestException('마감된 폴리오에는 결제를 붙일 수 없습니다.');
+      throw badRequest('FOLIO_CLOSED_NO_PAYMENT');
     }
 
     const amount = new Prisma.Decimal(dto.amount);
@@ -119,7 +113,7 @@ export class PaymentsService {
     }
 
     if (!dto.paymentToken) {
-      throw new BadRequestException('카드 결제에는 결제 토큰이 필요합니다.');
+      throw badRequest('PAYMENT_TOKEN_REQUIRED');
     }
 
     let result;
@@ -133,7 +127,9 @@ export class PaymentsService {
       });
     } catch (error) {
       const declined = error instanceof PaymentError && error.declined;
-      this.logger.warn(`Authorisation failed (${declined ? 'declined' : 'outcome unknown'}): ${describe(error)}`);
+      this.logger.warn(
+        `Authorisation failed (${declined ? 'declined' : 'outcome unknown'}): ${describe(error)}`,
+      );
 
       // Declines are logged. Repeated attempts on one card need to be traceable.
       if (declined) {
@@ -150,7 +146,7 @@ export class PaymentsService {
             createdById: user.id,
           },
         });
-        throw new BadRequestException(`결제가 거절되었습니다: ${describe(error)}`);
+        throw badRequest('PAYMENT_DECLINED', { reason: describe(error) });
       }
 
       /*
@@ -159,9 +155,7 @@ export class PaymentsService {
        * Burning the idempotency key blocks retrying with it and also blocks
        * finding out whether the authorisation went through. Ask the PSP instead.
        */
-      throw new BadRequestException(
-        '결제 대행사 응답을 받지 못했습니다. 승인되었을 수 있으니 PG 관리자에서 확인해 주세요.',
-      );
+      throw badRequest('PAYMENT_OUTCOME_UNKNOWN');
     }
 
     return this.prisma.payment.create({
@@ -204,23 +198,23 @@ export class PaymentsService {
     const payment = await this.load(paymentId, user);
 
     if (payment.status !== PaymentStatus.AUTHORIZED) {
-      throw new ConflictException(`승인 상태가 아닙니다(${payment.status}).`);
+      throw conflict('PAYMENT_NOT_AUTHORIZED', { status: payment.status });
     }
     // Cash and transfer capture immediately, so they never reach here. Guarded anyway.
     if (!payment.vendorTxnId) {
-      throw new BadRequestException('PG 를 거치지 않은 결제는 매입할 수 없습니다.');
+      throw badRequest('PAYMENT_OFF_GATEWAY_CAPTURE');
     }
 
     const amount = dto.amount === undefined ? payment.amount : new Prisma.Decimal(dto.amount);
     if (amount.greaterThan(payment.amount)) {
-      throw new BadRequestException('승인액을 초과하는 매입은 할 수 없습니다.');
+      throw badRequest('CAPTURE_OVER_AUTHORIZED');
     }
 
     try {
       await this.driver.capture(payment.vendorTxnId, amount.toFixed(2));
     } catch (error) {
       this.logger.warn(`Capture failed: ${describe(error)}`);
-      throw new BadRequestException(`매입하지 못했습니다: ${describe(error)}`);
+      throw badRequest('CAPTURE_FAILED', { reason: describe(error) });
     }
 
     const updated = await this.prisma.payment.update({
@@ -238,20 +232,18 @@ export class PaymentsService {
     const payment = await this.load(paymentId, user);
 
     if (payment.status !== PaymentStatus.AUTHORIZED) {
-      throw new ConflictException(
-        `승인 상태가 아닙니다(${payment.status}). 매입된 건은 환불로 처리해 주세요.`,
-      );
+      throw conflict('PAYMENT_NOT_AUTHORIZED_REFUND_INSTEAD', { status: payment.status });
     }
 
     if (!payment.vendorTxnId) {
-      throw new BadRequestException('PG 를 거치지 않은 결제는 승인 취소할 수 없습니다.');
+      throw badRequest('PAYMENT_OFF_GATEWAY_VOID');
     }
 
     try {
       await this.driver.void(payment.vendorTxnId);
     } catch (error) {
       this.logger.warn(`Void failed: ${describe(error)}`);
-      throw new BadRequestException(`승인을 취소하지 못했습니다: ${describe(error)}`);
+      throw badRequest('VOID_FAILED', { reason: describe(error) });
     }
 
     return this.prisma.payment.update({
@@ -270,15 +262,13 @@ export class PaymentsService {
     const payment = await this.load(paymentId, user);
 
     if (payment.status !== PaymentStatus.CAPTURED && payment.status !== PaymentStatus.REFUNDED) {
-      throw new ConflictException(`매입된 결제만 환불할 수 있습니다(현재 ${payment.status}).`);
+      throw conflict('PAYMENT_NOT_CAPTURED', { status: payment.status });
     }
 
     const amount = new Prisma.Decimal(dto.amount);
     const remaining = payment.amount.sub(payment.refundedAmount);
     if (amount.greaterThan(remaining)) {
-      throw new BadRequestException(
-        `환불 가능 금액을 초과했습니다. 남은 금액: ${remaining.toString()}`,
-      );
+      throw badRequest('REFUND_OVER_REMAINING', { amount: remaining.toString() });
     }
 
     /*
@@ -292,7 +282,7 @@ export class PaymentsService {
         await this.driver.refund(payment.vendorTxnId, amount.toFixed(2));
       } catch (error) {
         this.logger.warn(`Refund failed: ${describe(error)}`);
-        throw new BadRequestException(`환불하지 못했습니다: ${describe(error)}`);
+        throw badRequest('REFUND_FAILED', { reason: describe(error) });
       }
     }
 
@@ -357,9 +347,7 @@ export class PaymentsService {
       include: { property: true },
     });
     if (!reservation?.operaReservationId) {
-      throw new BadRequestException(
-        'OPERA 와 연결되지 않은 예약입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
-      );
+      throw badRequest('RESERVATION_NOT_LINKED');
     }
 
     const folio = await this.core.createPosting(reservation.operaReservationId, window, {
@@ -386,7 +374,7 @@ export class PaymentsService {
       select: { reservationId: true, window: true },
     });
     if (!folio) {
-      throw new NotFoundException(`폴리오를 찾을 수 없습니다: ${folioId}`);
+      throw notFound('FOLIO_NOT_FOUND', { folioId: folioId });
     }
     return folio;
   }
@@ -397,7 +385,7 @@ export class PaymentsService {
       include: { folio: { include: { reservation: { select: { propertyId: true } } } } },
     });
     if (!payment) {
-      throw new NotFoundException(`결제를 찾을 수 없습니다: ${paymentId}`);
+      throw notFound('PAYMENT_NOT_FOUND', { paymentId: paymentId });
     }
     assertWithinScope(user, payment.folio.reservation.propertyId);
     return payment;
@@ -410,7 +398,7 @@ export class PaymentsService {
       select: { propertyId: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: reservationId });
     }
     assertWithinScope(user, reservation.propertyId);
     return reservation.propertyId;

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   FolioStatus,
   Prisma,
@@ -17,6 +17,7 @@ import { parseDateOnly, toReservationStatus } from '../sync/reservation.mapper';
 import type { CheckInDto, CheckOutDto } from './dto/front-desk.dto';
 import type { ListReservationsDto } from './dto/list-reservations.dto';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
+import { badRequest, notFound } from '../common/errors';
 
 /** Statuses a check-in may start from. */
 const CHECK_IN_ALLOWED: ReservationStatus[] = [
@@ -32,9 +33,7 @@ const CHECK_IN_ALLOWED: ReservationStatus[] = [
  */
 function assertLinked(operaReservationId: string | null): string {
   if (!operaReservationId) {
-    throw new BadRequestException(
-      'OPERA 와 연결되지 않은 예약입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
-    );
+    throw badRequest('RESERVATION_NOT_LINKED');
   }
   return operaReservationId;
 }
@@ -112,7 +111,7 @@ export class ReservationsService {
     });
 
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: id });
     }
 
     // Lists are filtered by scope, but one record is reachable from its id alone.
@@ -138,26 +137,26 @@ export class ReservationsService {
       include: { property: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, reservation.propertyId);
 
     if (!CHECK_IN_ALLOWED.includes(reservation.status)) {
-      throw new BadRequestException(`현재 상태(${reservation.status})에서는 체크인할 수 없습니다.`);
+      throw badRequest('CHECK_IN_NOT_ALLOWED', { status: reservation.status });
     }
 
     const operaId = assertLinked(reservation.operaReservationId);
 
     const roomNumber = dto.roomNumber ?? reservation.assignedRoomNumber;
     if (!roomNumber) {
-      throw new BadRequestException('배정할 객실 번호가 없습니다.');
+      throw badRequest('ROOM_NUMBER_REQUIRED');
     }
 
     const room = await this.prisma.room.findUnique({
       where: { propertyId_number: { propertyId: reservation.propertyId, number: roomNumber } },
     });
     if (!room) {
-      throw new NotFoundException(`객실을 찾을 수 없습니다: ${roomNumber}`);
+      throw notFound('ROOM_NOT_FOUND', { room: roomNumber });
     }
     /*
      * A room already in use is not assigned again.
@@ -179,11 +178,11 @@ export class ReservationsService {
         : null;
 
       if (!sharing) {
-        throw new BadRequestException(`객실 ${roomNumber} 은 이미 사용 중입니다.`);
+        throw badRequest('ROOM_OCCUPIED', { room: roomNumber });
       }
     }
     if (room.status === RoomStatus.OUT_OF_ORDER || room.status === RoomStatus.OUT_OF_SERVICE) {
-      throw new BadRequestException(`객실 ${roomNumber} 은 판매 불가 상태(${room.status})입니다.`);
+      throw badRequest('ROOM_NOT_SELLABLE', { room: roomNumber, status: room.status });
     }
 
     /*
@@ -253,13 +252,11 @@ export class ReservationsService {
       include: { folios: true, property: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, reservation.propertyId);
     if (reservation.status !== ReservationStatus.IN_HOUSE) {
-      throw new BadRequestException(
-        `현재 상태(${reservation.status})에서는 체크아웃할 수 없습니다.`,
-      );
+      throw badRequest('CHECK_OUT_NOT_ALLOWED', { status: reservation.status });
     }
 
     const outstanding = reservation.folios
@@ -267,7 +264,7 @@ export class ReservationsService {
       .reduce((sum, folio) => sum.add(folio.balance), new Prisma.Decimal(0));
 
     if (!outstanding.isZero()) {
-      throw new BadRequestException(`미결제 잔액이 남아 있습니다: ${outstanding.toString()}`);
+      throw badRequest('BALANCE_OUTSTANDING', { amount: outstanding.toString() });
     }
 
     const operaId = assertLinked(reservation.operaReservationId);

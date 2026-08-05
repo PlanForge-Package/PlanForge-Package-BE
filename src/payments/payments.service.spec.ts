@@ -227,7 +227,7 @@ describe('PaymentsService — 승인', () => {
 
     await expect(
       service.authorize('res-1', 1, { ...CARD, paymentToken: undefined }, ACTOR),
-    ).rejects.toThrow(/결제 토큰/);
+    ).rejects.toMatchObject({ response: { code: 'PAYMENT_TOKEN_REQUIRED' } });
   });
 
   // Repeated attempts on one card need to be traceable later.
@@ -251,7 +251,9 @@ describe('PaymentsService — 승인', () => {
     driver.authorize.mockRejectedValue(new PaymentError('timeout', false));
     const service = await buildService(prisma, driver);
 
-    await expect(service.authorize('res-1', 1, CARD, ACTOR)).rejects.toThrow(/PG 관리자에서 확인/);
+    await expect(service.authorize('res-1', 1, CARD, ACTOR)).rejects.toMatchObject({
+      response: { code: 'PAYMENT_OUTCOME_UNKNOWN' },
+    });
     expect(prisma.payment.create).not.toHaveBeenCalled();
   });
 
@@ -274,7 +276,9 @@ describe('PaymentsService — 승인', () => {
     const service = await buildService(prisma);
     const scoped: AuthUser = { ...ACTOR, propertyId: 'prop-2' };
 
-    await expect(service.authorize('res-1', 1, CARD, scoped)).rejects.toThrow(/접근할 수 없습니다/);
+    await expect(service.authorize('res-1', 1, CARD, scoped)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
   });
 });
 
@@ -309,9 +313,9 @@ describe('PaymentsService — 매입', () => {
     const driver = buildDriver();
     const service = await buildService(prisma, driver);
 
-    await expect(service.capture('pay-1', { amount: 500000 }, ACTOR)).rejects.toThrow(
-      /승인액을 초과/,
-    );
+    await expect(service.capture('pay-1', { amount: 500000 }, ACTOR)).rejects.toMatchObject({
+      response: { code: 'CAPTURE_OVER_AUTHORIZED' },
+    });
     expect(driver.capture).not.toHaveBeenCalled();
   });
 
@@ -333,7 +337,9 @@ describe('PaymentsService — 매입', () => {
     driver.capture.mockRejectedValue(new PaymentError('망 장애', false));
     const service = await buildService(prisma, driver);
 
-    await expect(service.capture('pay-1', {}, ACTOR)).rejects.toThrow(/매입하지 못했습니다/);
+    await expect(service.capture('pay-1', {}, ACTOR)).rejects.toMatchObject({
+      response: { code: 'CAPTURE_FAILED' },
+    });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
@@ -360,7 +366,9 @@ describe('PaymentsService — 승인 취소·환불', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.void('pay-1', ACTOR)).rejects.toThrow(/환불로 처리/);
+    await expect(service.void('pay-1', ACTOR)).rejects.toMatchObject({
+      response: { code: 'PAYMENT_NOT_AUTHORIZED_REFUND_INSTEAD' },
+    });
   });
 
   // Deleting the original removes the payment from the bill and hides the correction.
@@ -397,9 +405,9 @@ describe('PaymentsService — 승인 취소·환불', () => {
     const driver = buildDriver();
     const service = await buildService(prisma, driver);
 
-    await expect(service.refund('pay-1', { amount: 50000 }, ACTOR)).rejects.toThrow(
-      /남은 금액: 40000/,
-    );
+    await expect(service.refund('pay-1', { amount: 50000 }, ACTOR)).rejects.toMatchObject({
+      response: { code: 'REFUND_OVER_REMAINING' },
+    });
     expect(driver.refund).not.toHaveBeenCalled();
   });
 
@@ -437,7 +445,9 @@ describe('PaymentsService — 승인 취소·환불', () => {
     const driver = buildDriver();
     const service = await buildService(prisma, driver);
 
-    await expect(service.void('pay-1', ACTOR)).rejects.toThrow(/PG 를 거치지 않은/);
+    await expect(service.void('pay-1', ACTOR)).rejects.toMatchObject({
+      response: { code: 'PAYMENT_OFF_GATEWAY_VOID' },
+    });
     expect(driver.void).not.toHaveBeenCalled();
   });
 

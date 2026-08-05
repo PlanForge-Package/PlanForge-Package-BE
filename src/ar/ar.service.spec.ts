@@ -177,7 +177,9 @@ describe('ArService — 거래처', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.accountDetail('acc-1', ACTOR)).rejects.toThrow(/접근할 수 없습니다/);
+    await expect(service.accountDetail('acc-1', ACTOR)).rejects.toMatchObject({
+      response: { code: 'OTHER_PROPERTY_FORBIDDEN' },
+    });
   });
 });
 
@@ -232,9 +234,9 @@ describe('ArService — 폴리오 이관', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toThrow(
-      /넘길 잔액이 없습니다/,
-    );
+    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toMatchObject({
+      response: { code: 'AR_NOTHING_TO_TRANSFER' },
+    });
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
@@ -247,9 +249,9 @@ describe('ArService — 폴리오 이관', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toThrow(
-      /넘길 잔액이 없습니다/,
-    );
+    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toMatchObject({
+      response: { code: 'AR_NOTHING_TO_TRANSFER' },
+    });
   });
 
   it('마감된 폴리오는 넘기지 않는다', async () => {
@@ -258,7 +260,9 @@ describe('ArService — 폴리오 이관', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toThrow(/마감된 폴리오/);
+    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toMatchObject({
+      response: { code: 'FOLIO_CLOSED_NO_TRANSFER' },
+    });
   });
 
   // Transferring to a suspended account piles up receivables with nobody to bill.
@@ -268,7 +272,9 @@ describe('ArService — 폴리오 이관', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toThrow(/중지된 거래처/);
+    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toMatchObject({
+      response: { code: 'AR_ACCOUNT_SUSPENDED' },
+    });
   });
 
   it('다른 호텔의 거래처로는 넘기지 않는다', async () => {
@@ -278,7 +284,9 @@ describe('ArService — 폴리오 이관', () => {
     const service = await buildService(prisma);
     const hq = { ...ACTOR, propertyId: null };
 
-    await expect(service.transferFolio('res-1', TRANSFER, hq)).rejects.toThrow(/다른 호텔/);
+    await expect(service.transferFolio('res-1', TRANSFER, hq)).rejects.toMatchObject({
+      response: { code: 'AR_ACCOUNT_OTHER_PROPERTY' },
+    });
   });
 
   /*
@@ -299,7 +307,9 @@ describe('ArService — 폴리오 이관', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toThrow(/여신 한도/);
+    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toMatchObject({
+      response: { code: 'AR_CREDIT_LIMIT_EXCEEDED' },
+    });
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 
@@ -328,7 +338,9 @@ describe('ArService — 폴리오 이관', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toThrow(/동기화/);
+    await expect(service.transferFolio('res-1', TRANSFER, ACTOR)).rejects.toMatchObject({
+      response: { code: 'RESERVATION_NOT_LINKED' },
+    });
     expect(core.createPosting).not.toHaveBeenCalled();
   });
 });
@@ -443,9 +455,9 @@ describe('ArService — 청구서', () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
 
-    await expect(service.createInvoice('acc-1', {}, ACTOR)).rejects.toThrow(
-      /청구할 거래가 없습니다/,
-    );
+    await expect(service.createInvoice('acc-1', {}, ACTOR)).rejects.toMatchObject({
+      response: { code: 'AR_NOTHING_TO_INVOICE' },
+    });
   });
 
   // With only payments left, it is money to return, not money to collect.
@@ -457,7 +469,9 @@ describe('ArService — 청구서', () => {
     });
     const service = await buildService(prisma);
 
-    await expect(service.createInvoice('acc-1', {}, ACTOR)).rejects.toThrow(/청구 합계가/);
+    await expect(service.createInvoice('acc-1', {}, ACTOR)).rejects.toMatchObject({
+      response: { code: 'AR_INVOICE_NOT_POSITIVE' },
+    });
   });
 
   it('번호를 이어서 매긴다', async () => {
@@ -625,7 +639,7 @@ describe('ArService — 부분 수금', () => {
         { amount: 200000, description: 'x', allocations: [{ invoiceId: 'inv-1', amount: 150000 }] },
         ACTOR,
       ),
-    ).rejects.toThrow(/남은 금액보다 많이/);
+    ).rejects.toMatchObject({ response: { code: 'AR_ALLOCATION_OVER_OUTSTANDING' } });
   });
 
   it('입금액보다 많이 배분하지 못한다', async () => {
@@ -651,7 +665,7 @@ describe('ArService — 부분 수금', () => {
         },
         ACTOR,
       ),
-    ).rejects.toThrow(/입금액보다 많이/);
+    ).rejects.toMatchObject({ response: { code: 'AR_ALLOCATION_OVER_PAYMENT' } });
   });
 
   it('다른 거래처의 청구서에는 붙이지 못한다', async () => {
@@ -666,7 +680,7 @@ describe('ArService — 부분 수금', () => {
         { amount: 10000, description: 'x', allocations: [{ invoiceId: 'other', amount: 10000 }] },
         ACTOR,
       ),
-    ).rejects.toThrow(/이 거래처의 청구서가 아니거나/);
+    ).rejects.toMatchObject({ response: { code: 'AR_ALLOCATION_INVOICE_INVALID' } });
   });
 
   it('같은 청구서를 두 번 지정하면 거절한다', async () => {
@@ -688,7 +702,7 @@ describe('ArService — 부분 수금', () => {
         },
         ACTOR,
       ),
-    ).rejects.toThrow(/두 번 지정/);
+    ).rejects.toMatchObject({ response: { code: 'AR_ALLOCATION_DUPLICATE_INVOICE' } });
   });
 
   // Older receivables are normally cleared first.
@@ -750,7 +764,7 @@ describe('ArService — 부분 수금', () => {
         },
         ACTOR,
       ),
-    ).rejects.toThrow(/함께 쓸 수 없습니다/);
+    ).rejects.toMatchObject({ response: { code: 'AR_ALLOCATION_MODE_CONFLICT' } });
   });
 });
 

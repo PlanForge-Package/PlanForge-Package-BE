@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ReservationStatus, RoomKeyStatus, type RoomKey } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,6 +7,7 @@ import { formatDateOnly } from '../sync/reservation.mapper';
 import { DOOR_LOCK_DRIVER, DoorLockError, type DoorLockDriver } from './doorlock.driver';
 import { zonedHourToUtc } from './local-time';
 import type { IssueKeyDto, RevokeKeyDto } from './dto/doorlock.dto';
+import { badRequest, notFound } from '../common/errors';
 
 /** Check-out time; cards open until then. It belongs in hotel settings, fixed for now. */
 const CHECKOUT_HOUR = 12;
@@ -62,12 +63,10 @@ export class DoorLockService {
     const reservation = await this.loadReservation(reservationId, user);
 
     if (reservation.status !== ReservationStatus.IN_HOUSE) {
-      throw new BadRequestException(
-        `재실 상태가 아닙니다(${reservation.status}). 체크인 후 발급할 수 있습니다.`,
-      );
+      throw badRequest('KEY_NOT_IN_HOUSE', { status: reservation.status });
     }
     if (!reservation.assignedRoomNumber) {
-      throw new BadRequestException('배정된 객실이 없습니다. 객실을 먼저 배정해 주세요.');
+      throw badRequest('KEY_NO_ROOM');
     }
 
     const timeZone = reservation.property.timezone;
@@ -82,9 +81,7 @@ export class DoorLockService {
     );
 
     if (validUntil <= new Date()) {
-      throw new BadRequestException(
-        '이미 체크아웃 시각이 지났습니다. 체류를 연장한 뒤 발급해 주세요.',
-      );
+      throw badRequest('KEY_PAST_CHECKOUT');
     }
 
     const previous = await this.prisma.roomKey.count({ where: { reservationId } });
@@ -112,12 +109,12 @@ export class DoorLockService {
       vendorKeyId = result.vendorKeyId;
     } catch (error) {
       const rejected = error instanceof DoorLockError && error.rejected;
-      this.logger.error(`Key issue failed (${rejected ? 'refused' : 'outcome unknown'}): ${describe(error)}`);
-      throw new BadRequestException(
-        rejected
-          ? `잠금장치가 발급을 거절했습니다: ${describe(error)}`
-          : '잠금장치에 연결하지 못했습니다. 카드가 만들어졌을 수 있으니 인코더를 확인해 주세요.',
+      this.logger.error(
+        `Key issue failed (${rejected ? 'refused' : 'outcome unknown'}): ${describe(error)}`,
       );
+      throw rejected
+        ? badRequest('KEY_ISSUE_REFUSED', { reason: describe(error) })
+        : badRequest('KEY_ISSUE_UNREACHABLE');
     }
 
     const key = await this.prisma.roomKey.create({
@@ -139,7 +136,7 @@ export class DoorLockService {
   async revoke(keyId: string, dto: RevokeKeyDto, user: AuthUser) {
     const key = await this.prisma.roomKey.findUnique({ where: { id: keyId } });
     if (!key) {
-      throw new NotFoundException(`키를 찾을 수 없습니다: ${keyId}`);
+      throw notFound('KEY_NOT_FOUND', { keyId: keyId });
     }
     assertWithinScope(user, key.propertyId);
 
@@ -185,9 +182,7 @@ export class DoorLockService {
       await this.driver.revoke(key.vendorKeyId);
     } catch (error) {
       this.logger.error(`Key void failed: ${key.vendorKeyId} — ${describe(error)}`);
-      throw new BadRequestException(
-        '잠금장치에서 카드를 무효화하지 못했습니다. 카드가 아직 열릴 수 있으니 확인해 주세요.',
-      );
+      throw badRequest('KEY_VOID_FAILED');
     }
 
     await this.prisma.roomKey.update({
@@ -202,7 +197,7 @@ export class DoorLockService {
       include: { property: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: reservationId });
     }
     assertWithinScope(user, reservation.propertyId);
     return reservation;

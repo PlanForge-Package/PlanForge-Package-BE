@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 
@@ -13,6 +13,7 @@ import type {
 } from './dto/folios.dto';
 import { mirrorFolios, toOperaPostingType } from './folio-mirror';
 import { withSyncLog } from '../sync/sync-log';
+import { badRequest, notFound } from '../common/errors';
 
 /**
  * Folio — the guest's bill.
@@ -151,7 +152,7 @@ export class FoliosService {
       include: { folio: true },
     });
     if (!posting || posting.folio.reservationId !== reservationId) {
-      throw new NotFoundException(`거래를 찾을 수 없습니다: ${postingId}`);
+      throw notFound('POSTING_NOT_FOUND', { postingId: postingId });
     }
 
     /*
@@ -162,15 +163,11 @@ export class FoliosService {
      * to reverse. OPERA does not know this relation, so it is blocked here.
      */
     if (posting.paymentId) {
-      throw new BadRequestException(
-        '결제로 생긴 거래는 옮길 수 없습니다. 결제를 취소한 뒤 다시 받아 주세요.',
-      );
+      throw badRequest('POSTING_FROM_PAYMENT');
     }
 
     if (!posting.operaPostingId) {
-      throw new BadRequestException(
-        'OPERA 와 연결되지 않은 거래입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
-      );
+      throw badRequest('POSTING_NOT_LINKED');
     }
 
     const result = await this.delegate(
@@ -219,9 +216,7 @@ export class FoliosService {
       where: { reservationId_window: { reservationId, window: dto.targetWindow } },
     });
     if (!target) {
-      throw new NotFoundException(
-        `윈도 ${dto.targetWindow} 이 열려 있지 않습니다. 먼저 창구를 열어 주세요.`,
-      );
+      throw notFound('FOLIO_TARGET_WINDOW_NOT_OPEN', { window: dto.targetWindow });
     }
 
     const code = dto.transactionCode.trim();
@@ -245,7 +240,7 @@ export class FoliosService {
       where: { reservationId_transactionCode: { reservationId, transactionCode } },
     });
     if (!existing) {
-      throw new NotFoundException(`라우팅 지시를 찾을 수 없습니다: ${transactionCode}`);
+      throw notFound('ROUTING_NOT_FOUND', { transactionCode: transactionCode });
     }
 
     await this.prisma.folioRouting.delete({ where: { id: existing.id } });
@@ -262,14 +257,12 @@ export class FoliosService {
       include: { property: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: reservationId });
     }
     assertWithinScope(user, reservation.propertyId);
 
     if (!reservation.operaReservationId) {
-      throw new BadRequestException(
-        'OPERA 와 연결되지 않은 예약입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
-      );
+      throw badRequest('RESERVATION_NOT_LINKED');
     }
 
     return { reservation, operaId: reservation.operaReservationId };

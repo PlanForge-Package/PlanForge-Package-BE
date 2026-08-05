@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
   ReservationStatus,
@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly, toReservationStatus } from '../sync/reservation.mapper';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
+import { badRequest, notFound } from '../common/errors';
 import type {
   CancelBookingDto,
   CheckAvailabilityDto,
@@ -324,7 +325,7 @@ export class BookingService {
     const { reservation, property } = await this.loadLinked(id, user);
 
     if (reservation.status !== ReservationStatus.WAITLISTED) {
-      throw new BadRequestException(`대기 상태가 아닙니다: ${reservation.status}`);
+      throw badRequest('NOT_WAITLISTED', { status: reservation.status });
     }
 
     const log = await this.startLog('Reservation', reservation.operaReservationId, {
@@ -358,7 +359,7 @@ export class BookingService {
 
     // Different hotels cannot share a room. Blocked before the external call.
     if (partner.propertyId !== reservation.propertyId) {
-      throw new BadRequestException('다른 호텔의 예약과는 객실을 함께 쓸 수 없습니다.');
+      throw badRequest('SHARE_OTHER_PROPERTY');
     }
 
     const log = await this.startLog('Reservation', reservation.operaReservationId, {
@@ -389,7 +390,7 @@ export class BookingService {
     const { reservation, property } = await this.loadLinked(id, user);
 
     if (!reservation.shareGroupId) {
-      throw new BadRequestException('공유 중인 예약이 아닙니다.');
+      throw badRequest('NOT_SHARED');
     }
 
     const log = await this.startLog('Reservation', reservation.operaReservationId, {
@@ -434,15 +435,13 @@ export class BookingService {
       include: { property: true },
     });
     if (!reservation) {
-      throw new NotFoundException(`예약을 찾을 수 없습니다: ${id}`);
+      throw notFound('RESERVATION_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, reservation.propertyId);
 
     // A reservation OPERA does not have cannot be fixed here; local-only diverges.
     if (!reservation.operaReservationId) {
-      throw new BadRequestException(
-        'OPERA 와 연결되지 않은 예약입니다. 먼저 동기화한 뒤 다시 시도해 주세요.',
-      );
+      throw badRequest('RESERVATION_NOT_LINKED');
     }
 
     return { reservation, property: reservation.property };
@@ -451,12 +450,12 @@ export class BookingService {
   private async resolveProperty(requested: string | undefined, user: AuthUser): Promise<Property> {
     const propertyId = resolvePropertyScope(user, requested);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
     return property;
   }
@@ -469,7 +468,7 @@ export class BookingService {
    */
   private assertDateRange(arrival: string, departure: string): void {
     if (departure <= arrival) {
-      throw new BadRequestException('출발일은 도착일보다 뒤여야 합니다.');
+      throw badRequest('DEPARTURE_BEFORE_ARRIVAL');
     }
   }
 

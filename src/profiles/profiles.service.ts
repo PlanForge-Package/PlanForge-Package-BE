@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, SyncStatus, type Profile } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
 import { PREFERENCE_CODES, type ListProfilesDto, type UpdateProfileDto } from './dto/profiles.dto';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
+import { badRequest, notFound } from '../common/errors';
 
 const VALID_PREFERENCES = new Set<string>(PREFERENCE_CODES);
 
@@ -64,7 +65,7 @@ export class ProfilesService {
       include: { mergedInto: { select: { id: true, firstName: true, lastName: true } } },
     });
     if (!profile) {
-      throw new NotFoundException(`프로필을 찾을 수 없습니다: ${id}`);
+      throw notFound('PROFILE_NOT_FOUND', { id: id });
     }
 
     // Stay history is narrowed to the hotels the requester may see.
@@ -104,15 +105,13 @@ export class ProfilesService {
 
     // Editing a merged profile splits it from the canonical one, with no way to tell which is right.
     if (profile.mergedIntoId) {
-      throw new BadRequestException(
-        '이미 다른 프로필로 병합된 프로필입니다. 정본 프로필에서 수정해 주세요.',
-      );
+      throw badRequest('PROFILE_MERGED_READ_ONLY');
     }
 
     if (dto.preferences) {
       const unknown = dto.preferences.filter((code) => !VALID_PREFERENCES.has(code));
       if (unknown.length > 0) {
-        throw new BadRequestException(`알 수 없는 선호 코드입니다: ${unknown.join(', ')}`);
+        throw badRequest('PROFILE_PREFERENCE_UNKNOWN', { codes: unknown.join(', ') });
       }
     }
 
@@ -188,18 +187,16 @@ export class ProfilesService {
    */
   async merge(sourceId: string, targetId: string) {
     if (sourceId === targetId) {
-      throw new BadRequestException('같은 프로필끼리는 병합할 수 없습니다.');
+      throw badRequest('PROFILE_MERGE_SELF');
     }
 
     const [source, target] = await Promise.all([this.load(sourceId), this.load(targetId)]);
 
     if (source.mergedIntoId) {
-      throw new BadRequestException('이미 병합된 프로필입니다.');
+      throw badRequest('PROFILE_ALREADY_MERGED');
     }
     if (target.mergedIntoId) {
-      throw new BadRequestException(
-        '대상 프로필이 이미 다른 프로필로 병합되었습니다. 정본을 대상으로 지정해 주세요.',
-      );
+      throw badRequest('PROFILE_TARGET_MERGED');
     }
 
     /*
@@ -284,7 +281,7 @@ export class ProfilesService {
   private async load(id: string): Promise<Profile> {
     const profile = await this.prisma.profile.findUnique({ where: { id } });
     if (!profile) {
-      throw new NotFoundException(`프로필을 찾을 수 없습니다: ${id}`);
+      throw notFound('PROFILE_NOT_FOUND', { id: id });
     }
     return profile;
   }

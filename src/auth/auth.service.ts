@@ -1,10 +1,11 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import type { JwtPayload } from './auth.constants';
 import type { AuthUserDto, LoginDto, LoginResponseDto } from './dto/auth.dto';
+import { unauthorized } from '../common/errors';
 
 /**
  * Dummy hash so a non-existent account still pays the hashing cost.
@@ -34,7 +35,7 @@ export class AuthService {
     // Saying which one was wrong is what account enumeration runs on.
     if (!user || !matches || !user.active) {
       this.logger.warn(`Login failed: ${email}`);
-      throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
+      throw unauthorized('BAD_CREDENTIALS');
     }
 
     await this.prisma.user.update({
@@ -66,7 +67,7 @@ export class AuthService {
 
     // An account can be deleted or disabled after the token was issued. The token alone is not trusted.
     if (!user || !user.active) {
-      throw new UnauthorizedException('사용할 수 없는 계정입니다. 다시 로그인해 주세요.');
+      throw unauthorized('ACCOUNT_DISABLED');
     }
 
     return toAuthUser(user);

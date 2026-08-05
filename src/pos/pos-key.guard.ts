@@ -1,8 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import type { PosOutlet } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
+import { unauthorized } from '../common/errors';
 
 /** Header carrying the key. Not Authorization, to keep it from mixing with JWTs. */
 export const POS_KEY_HEADER = 'x-pos-key';
@@ -35,7 +36,7 @@ export class PosKeyGuard implements CanActivate {
     const raw = request.header(POS_KEY_HEADER);
 
     if (!raw || !raw.startsWith(POS_KEY_PREFIX)) {
-      throw new UnauthorizedException('POS 키가 없거나 형식이 올바르지 않습니다.');
+      throw unauthorized('POS_KEY_MALFORMED');
     }
 
     /*
@@ -61,6 +62,6 @@ export class PosKeyGuard implements CanActivate {
     }
 
     // An inactive outlet and an unknown key are not told apart — it would guide key hunting.
-    throw new UnauthorizedException('POS 키가 올바르지 않습니다.');
+    throw unauthorized('POS_KEY_INVALID');
   }
 }

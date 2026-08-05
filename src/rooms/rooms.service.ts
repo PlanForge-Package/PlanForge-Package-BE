@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, RoomStatus } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
 import type { ListRoomsDto } from './dto/rooms.dto';
+import { badRequest } from '../common/errors';
 
 @Injectable()
 export class RoomsService {
@@ -33,7 +34,7 @@ export class RoomsService {
 
     // Counts only mean something for one hotel. A chain-wide total has no operational use.
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const grouped = await this.prisma.room.groupBy({

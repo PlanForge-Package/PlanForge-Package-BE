@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   PaymentMethod,
   PaymentStatus,
@@ -15,6 +10,7 @@ import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import type { CloseShiftDto, ListShiftsDto, OpenShiftDto } from './dto/cashier.dto';
+import { badRequest, conflict, notFound } from '../common/errors';
 
 /** Payment states in the closing totals. An authorisation is not money received yet. */
 const SETTLED: PaymentStatus[] = [PaymentStatus.CAPTURED, PaymentStatus.REFUNDED];
@@ -58,12 +54,12 @@ export class CashierService {
   async open(dto: OpenShiftDto, user: AuthUser): Promise<CashierShift> {
     const propertyId = resolvePropertyScope(user, dto.propertyId);
     if (!propertyId) {
-      throw new BadRequestException('호텔을 선택해 주세요.');
+      throw badRequest('PROPERTY_REQUIRED');
     }
 
     const property = await this.prisma.property.findUnique({ where: { id: propertyId } });
     if (!property) {
-      throw new NotFoundException(`호텔을 찾을 수 없습니다: ${propertyId}`);
+      throw notFound('PROPERTY_NOT_FOUND', { propertyId: propertyId });
     }
 
     const open = await this.prisma.cashierShift.findFirst({
@@ -71,7 +67,7 @@ export class CashierService {
       select: { id: true, propertyId: true },
     });
     if (open) {
-      throw new ConflictException('이미 열려 있는 근무조가 있습니다. 먼저 마감해 주세요.');
+      throw conflict('SHIFT_ALREADY_OPEN');
     }
 
     return this.prisma.cashierShift.create({
@@ -97,16 +93,16 @@ export class CashierService {
       include: SHIFT_INCLUDE,
     });
     if (!shift) {
-      throw new NotFoundException(`근무조를 찾을 수 없습니다: ${id}`);
+      throw notFound('SHIFT_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, shift.propertyId);
 
     // Closing someone else's shift denies them the chance to check what they took.
     if (shift.userId !== user.id) {
-      throw new BadRequestException('자기 근무조만 마감할 수 있습니다.');
+      throw badRequest('SHIFT_NOT_MINE');
     }
     if (shift.closedAt) {
-      throw new ConflictException('이미 마감된 근무조입니다.');
+      throw conflict('SHIFT_ALREADY_CLOSED');
     }
 
     const closed = await this.prisma.cashierShift.update({
@@ -146,7 +142,7 @@ export class CashierService {
       include: SHIFT_INCLUDE,
     });
     if (!shift) {
-      throw new NotFoundException(`근무조를 찾을 수 없습니다: ${id}`);
+      throw notFound('SHIFT_NOT_FOUND', { id: id });
     }
     assertWithinScope(user, shift.propertyId);
 

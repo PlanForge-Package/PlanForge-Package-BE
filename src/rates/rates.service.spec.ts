@@ -126,7 +126,7 @@ describe('RatesService — 조회', () => {
 
     await expect(
       service.quote({ arrivalDate: '2026-08-12', departureDate: '2026-08-10' }, ACTOR),
-    ).rejects.toThrow(/출발일/);
+    ).rejects.toMatchObject({ response: { code: 'DEPARTURE_BEFORE_ARRIVAL' } });
     expect(core.getRates).not.toHaveBeenCalled();
   });
 
@@ -171,7 +171,7 @@ describe('RatesService — 요금 코드', () => {
 
     await expect(
       service.createPlan({ ...NEW_PLAN, baseAmounts: { NOPE: 100000 } }, ACTOR),
-    ).rejects.toThrow(/알 수 없는 객실 타입입니다: NOPE/);
+    ).rejects.toMatchObject({ response: { code: 'RATE_ROOM_TYPE_UNKNOWN' } });
     expect(core.createRatePlan).not.toHaveBeenCalled();
   });
 
@@ -188,8 +188,8 @@ describe('RatesService — 요금 코드', () => {
     const prisma = buildPrisma();
     const service = await buildService(prisma);
 
-    await expect(service.createPlan({ ...NEW_PLAN, baseAmounts: {} }, ACTOR)).rejects.toThrow(
-      /비어 있습니다/,
+    await expect(service.createPlan({ ...NEW_PLAN, baseAmounts: {} }, ACTOR)).rejects.toMatchObject(
+      { response: { code: 'RATE_AMOUNTS_EMPTY' } },
     );
   });
 
@@ -199,7 +199,7 @@ describe('RatesService — 요금 코드', () => {
 
     await expect(
       service.createPlan({ ...NEW_PLAN, baseAmounts: { STDT: -1 } }, ACTOR),
-    ).rejects.toThrow(/0 이상의 정수/);
+    ).rejects.toMatchObject({ response: { code: 'RATE_AMOUNT_INVALID' } });
   });
 
   it('소수점 금액은 거절한다', async () => {
@@ -208,7 +208,7 @@ describe('RatesService — 요금 코드', () => {
 
     await expect(
       service.createPlan({ ...NEW_PLAN, baseAmounts: { STDT: 1000.5 } }, ACTOR),
-    ).rejects.toThrow(/0 이상의 정수/);
+    ).rejects.toMatchObject({ response: { code: 'RATE_AMOUNT_INVALID' } });
   });
 
   it('판매 종료일이 시작일보다 앞서면 거절한다', async () => {
@@ -221,7 +221,7 @@ describe('RatesService — 요금 코드', () => {
         { ...NEW_PLAN, sellStartDate: '2026-08-31', sellEndDate: '2026-06-01' },
         ACTOR,
       ),
-    ).rejects.toThrow(/판매 종료일/);
+    ).rejects.toMatchObject({ response: { code: 'RATE_SELL_END_BEFORE_START' } });
     expect(core.createRatePlan).not.toHaveBeenCalled();
   });
 
@@ -230,9 +230,9 @@ describe('RatesService — 요금 코드', () => {
     const core = buildCore();
     const service = await buildService(prisma, core);
 
-    await expect(service.updatePlan('BAR', { baseAmounts: { NOPE: 1000 } }, ACTOR)).rejects.toThrow(
-      /알 수 없는 객실 타입/,
-    );
+    await expect(
+      service.updatePlan('BAR', { baseAmounts: { NOPE: 1000 } }, ACTOR),
+    ).rejects.toMatchObject({ response: { code: 'RATE_ROOM_TYPE_UNKNOWN' } });
     expect(core.updateRatePlan).not.toHaveBeenCalled();
   });
 
@@ -287,7 +287,7 @@ describe('RatesService — 시즌', () => {
 
     await expect(
       service.addSeason('BAR', { ...SEASON, daysOfWeek: [5, 5] }, ACTOR),
-    ).rejects.toThrow(/요일이 중복/);
+    ).rejects.toMatchObject({ response: { code: 'RATE_WEEKDAY_DUPLICATE' } });
   });
 
   it('종료일이 시작일보다 앞서면 거절한다', async () => {
@@ -301,7 +301,7 @@ describe('RatesService — 시즌', () => {
         { ...SEASON, startDate: '2026-08-20', endDate: '2026-07-15' },
         ACTOR,
       ),
-    ).rejects.toThrow(/종료일/);
+    ).rejects.toMatchObject({ response: { code: 'END_BEFORE_START' } });
     expect(core.addRateSeason).not.toHaveBeenCalled();
   });
 

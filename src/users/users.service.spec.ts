@@ -107,7 +107,7 @@ describe('UsersService', () => {
           role: UserRole.FRONT_DESK,
           propertyId: 'nope',
         }),
-      ).rejects.toThrow(/호텔을 찾을 수 없습니다/);
+      ).rejects.toMatchObject({ response: { code: 'PROPERTY_NOT_FOUND' } });
     });
   });
 
@@ -117,9 +117,9 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValue(ADMIN);
 
       const service = await buildService(prisma);
-      await expect(service.update('admin-1', { active: false }, 'admin-1')).rejects.toThrow(
-        /자기 계정은 비활성화할 수 없습니다/,
-      );
+      await expect(service.update('admin-1', { active: false }, 'admin-1')).rejects.toMatchObject({
+        response: { code: 'USER_SELF_DEACTIVATE' },
+      });
     });
 
     it('자기 역할은 변경할 수 없다', async () => {
@@ -129,7 +129,7 @@ describe('UsersService', () => {
       const service = await buildService(prisma);
       await expect(
         service.update('admin-1', { role: UserRole.FRONT_DESK }, 'admin-1'),
-      ).rejects.toThrow(/자기 역할은 변경할 수 없습니다/);
+      ).rejects.toMatchObject({ response: { code: 'USER_SELF_ROLE' } });
     });
 
     it('자기 이름 변경은 허용한다', async () => {
@@ -162,7 +162,7 @@ describe('UsersService', () => {
       const service = await buildService(prisma);
       await expect(
         service.update('admin-2', { role: UserRole.MANAGER }, 'admin-1'),
-      ).rejects.toThrow(/마지막 관리자/);
+      ).rejects.toMatchObject({ response: { code: 'USER_LAST_ADMIN' } });
     });
 
     it('마지막 관리자를 비활성화할 수 없다', async () => {
@@ -171,9 +171,9 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(1);
 
       const service = await buildService(prisma);
-      await expect(service.update('admin-2', { active: false }, 'admin-1')).rejects.toThrow(
-        /마지막 관리자/,
-      );
+      await expect(service.update('admin-2', { active: false }, 'admin-1')).rejects.toMatchObject({
+        response: { code: 'USER_LAST_ADMIN' },
+      });
     });
 
     it('관리자가 둘 이상이면 강등할 수 있다', async () => {
@@ -232,9 +232,9 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValue(await userWith('planforge'));
 
       const service = await buildService(prisma);
-      await expect(service.changeOwnPassword('u1', 'wrong', 'new-password-1')).rejects.toThrow(
-        /현재 비밀번호가 올바르지 않습니다/,
-      );
+      await expect(
+        service.changeOwnPassword('u1', 'wrong', 'new-password-1'),
+      ).rejects.toMatchObject({ response: { code: 'USER_CURRENT_PASSWORD_WRONG' } });
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 

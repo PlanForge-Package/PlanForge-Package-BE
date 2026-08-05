@@ -1,8 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { IS_PUBLIC, type AuthUser, type JwtPayload } from './auth.constants';
+import { unauthorized } from '../common/errors';
 
 /**
  * Global guard. Every route without `@Public()` requires a valid Bearer token.
@@ -27,7 +28,7 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request & { user?: AuthUser }>();
     const token = extractBearer(request.headers.authorization);
     if (!token) {
-      throw new UnauthorizedException('인증 토큰이 필요합니다.');
+      throw unauthorized('TOKEN_REQUIRED');
     }
 
     let payload: JwtPayload;
@@ -36,9 +37,7 @@ export class JwtAuthGuard implements CanActivate {
     } catch (error) {
       // Expiry and forgery are reported apart — the client can prompt for re-login differently.
       const expired = error instanceof Error && error.name === 'TokenExpiredError';
-      throw new UnauthorizedException(
-        expired ? '세션이 만료되었습니다. 다시 로그인해 주세요.' : '유효하지 않은 토큰입니다.',
-      );
+      throw unauthorized(expired ? 'SESSION_EXPIRED' : 'TOKEN_INVALID');
     }
 
     request.user = { ...payload, id: payload.sub };
