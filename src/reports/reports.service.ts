@@ -88,7 +88,7 @@ export class ReportsService {
       }),
       this.prisma.posting.findMany({
         where: {
-          folio: { reservation: { propertyId: property.id } },
+          propertyId: property.id,
           postedAt: { gte: from, lt: addDays(toExclusive, 1) },
         },
         select: { type: true, amount: true, postedAt: true },

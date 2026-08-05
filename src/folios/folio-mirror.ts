@@ -36,6 +36,20 @@ export async function mirrorFolios(
   currency: string,
   folios: CoreFolio[],
 ): Promise<void> {
+  /*
+   * The hotel is read once and stamped on every posting.
+   *
+   * Postings carry it denormalised so a hotel's ledger can be summed over a date range
+   * without joining out to the reservation. Read here rather than passed in: nine call
+   * sites would each have to carry it, and one of them getting it wrong would file a
+   * charge under the wrong hotel.
+   */
+  const reservation = await tx.reservation.findUniqueOrThrow({
+    where: { id: reservationId },
+    select: { propertyId: true },
+  });
+  const { propertyId } = reservation;
+
   const keptPostingIds: string[] = [];
 
   for (const folio of folios) {
@@ -95,6 +109,7 @@ export async function mirrorFolios(
         create: {
           operaPostingId: posting.postingId,
           folioId: saved.id,
+          propertyId,
           type: FROM_OPERA_TYPE[posting.type] ?? PostingType.CHARGE,
           transactionCode: posting.transactionCode,
           description: posting.description,

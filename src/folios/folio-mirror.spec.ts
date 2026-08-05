@@ -4,6 +4,10 @@ import { mirrorFolios, toOperaPostingType } from './folio-mirror';
 
 function buildTx(overrides: Record<string, unknown> = {}) {
   return {
+    // Postings are stamped with the hotel, which the mirror reads from the reservation.
+    reservation: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ propertyId: 'prop-1' }),
+    },
     folio: {
       upsert: jest.fn().mockImplementation(({ create, where }) => ({
         id: `folio-${where.reservationId_window.window}`,
@@ -85,6 +89,21 @@ describe('folio-mirror', () => {
 
     expect(tx.posting.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { operaPostingId: 'PST-801' } }),
+    );
+  });
+
+  /*
+   * The hotel is stamped on the row so a close can sum a hotel's ledger over a date
+   * range without joining every posting out to its reservation.
+   */
+  it('거래에 예약의 호텔을 함께 적는다', async () => {
+    const tx = buildTx();
+    await mirrorFolios(tx as never, 'res-1', 'KRW', [folio()]);
+
+    expect(tx.posting.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ propertyId: 'prop-1' }),
+      }),
     );
   });
 

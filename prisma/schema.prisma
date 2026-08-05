@@ -91,6 +91,8 @@ model Property {
   traces            ReservationTrace[]
   arAccounts        ArAccount[]
   arInvoices        ArInvoice[]
+  postings          Posting[]
+  payments          Payment[]
 
   @@map("properties")
 }
@@ -588,8 +590,10 @@ enum PaymentStatus {
  * card-data storage and changes what a leak means.
  */
 model Payment {
-  id      String @id @default(cuid())
-  folioId String
+  id         String @id @default(cuid())
+  folioId    String
+  /// The hotel this payment belongs to. Denormalised for the same reason as Posting.
+  propertyId String
 
   method         PaymentMethod
   status         PaymentStatus @default(AUTHORIZED)
@@ -626,11 +630,13 @@ model Payment {
   shiftId String?
 
   folio     Folio         @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  property  Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   createdBy User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
   postings  Posting[]
   shift     CashierShift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
   @@index([folioId, status])
+  @@index([propertyId, capturedAt])
   @@index([shiftId])
   @@map("payments")
 }
@@ -773,6 +779,14 @@ model Posting {
   /// OPERA postingId. The ledger's source is OPERA and this row is a copy.
   operaPostingId  String?     @unique
   folioId         String
+  /**
+   * The hotel this posting belongs to, denormalised from folio -> reservation.
+   * The close journal and the daily report both sum a hotel's postings over a date
+   * range. Reached through the relation, that filter cannot use an index at all —
+   * every row in the table has to be joined out to its reservation first. The column
+   * is redundant but the reports are the hottest read in the system.
+   */
+  propertyId      String
   type            PostingType
   /// OPERA transactionCode
   transactionCode String
@@ -801,6 +815,7 @@ model Posting {
   transferredById       String?
 
   folio         Folio      @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  property      Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   outlet        PosOutlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
   payment       Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
   transferredBy User?      @relation(fields: [transferredById], references: [id])
@@ -812,6 +827,7 @@ model Posting {
 
   @@unique([outletId, reference])
   @@index([folioId, postedAt])
+  @@index([propertyId, postedAt])
   @@map("postings")
 }
 

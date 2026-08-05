@@ -71,7 +71,7 @@ export class PaymentsService {
     dto: AuthorizePaymentDto,
     user: AuthUser,
   ): Promise<Payment> {
-    await this.assertReservationInScope(reservationId, user);
+    const propertyId = await this.assertReservationInScope(reservationId, user);
 
     const existing = await this.prisma.payment.findUnique({
       where: { idempotencyKey: dto.idempotencyKey },
@@ -103,6 +103,7 @@ export class PaymentsService {
       const payment = await this.prisma.payment.create({
         data: {
           folioId: folio.id,
+          propertyId,
           method: dto.method,
           status: PaymentStatus.CAPTURED,
           amount,
@@ -139,6 +140,7 @@ export class PaymentsService {
         await this.prisma.payment.create({
           data: {
             folioId: folio.id,
+            propertyId,
             method: dto.method,
             status: PaymentStatus.FAILED,
             amount,
@@ -165,6 +167,7 @@ export class PaymentsService {
     return this.prisma.payment.create({
       data: {
         folioId: folio.id,
+        propertyId,
         method: dto.method,
         status: PaymentStatus.AUTHORIZED,
         amount,
@@ -400,7 +403,8 @@ export class PaymentsService {
     return payment;
   }
 
-  private async assertReservationInScope(reservationId: string, user: AuthUser): Promise<void> {
+  /** Checks the hotel scope and hands back the hotel, which payments are stamped with. */
+  private async assertReservationInScope(reservationId: string, user: AuthUser): Promise<string> {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
       select: { propertyId: true },
@@ -409,6 +413,7 @@ export class PaymentsService {
       throw new NotFoundException(`예약을 찾을 수 없습니다: ${reservationId}`);
     }
     assertWithinScope(user, reservation.propertyId);
+    return reservation.propertyId;
   }
 }
 

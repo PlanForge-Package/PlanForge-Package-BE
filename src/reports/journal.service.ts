@@ -67,14 +67,14 @@ export class JournalService {
       this.loadCodes(property),
       this.prisma.posting.findMany({
         where: {
-          folio: { reservation: { propertyId: property.id } },
+          propertyId: property.id,
           postedAt: { gte: dayStart, lt: dayEnd },
         },
         select: { transactionCode: true, type: true, amount: true },
       }),
       this.prisma.payment.findMany({
         where: {
-          folio: { reservation: { propertyId: property.id } },
+          propertyId: property.id,
           status: { in: SETTLED },
           capturedAt: { gte: dayStart, lt: dayEnd },
         },
@@ -83,7 +83,7 @@ export class JournalService {
       // Balance carried in from the previous day. The sum of postings is what is owed.
       this.prisma.posting.aggregate({
         where: {
-          folio: { reservation: { propertyId: property.id } },
+          propertyId: property.id,
           postedAt: { lt: dayStart },
         },
         _sum: { amount: true },
