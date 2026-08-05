@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly } from '../sync/reservation.mapper';
 import type { CreateTraceDto, ListTracesDto } from './dto/traces.dto';
+import { toDateString, todayString } from '../common/date';
 
 const TRACE_INCLUDE = {
   reservation: {
@@ -43,7 +44,7 @@ export class TracesService {
   /** Grouped by date and department. The list a department opens in the morning. */
   async list(query: ListTracesDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, query.propertyId);
-    const date = parseDateOnly(query.date ?? today());
+    const date = parseDateOnly(query.date ?? todayString());
 
     const items = await this.prisma.reservationTrace.findMany({
       where: {
@@ -56,7 +57,7 @@ export class TracesService {
       orderBy: [{ status: 'asc' }, { department: 'asc' }, { createdAt: 'asc' }],
     });
 
-    return { date: query.date ?? today(), items, total: items.length };
+    return { date: query.date ?? todayString(), items, total: items.length };
   }
 
   /** Every instruction on a reservation, past ones too — what was done is the history. */
@@ -158,11 +159,4 @@ export class TracesService {
   }
 }
 
-function toDateString(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
 /** Today in UTC, the same basis as @db.Date columns. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}

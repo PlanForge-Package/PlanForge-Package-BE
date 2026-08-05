@@ -21,6 +21,7 @@ import type {
 } from './dto/housekeeping.dto';
 import { fromOperaRoomStatus, toOperaRoomStatus } from './room-status.mapper';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
+import { todayString } from '../common/date';
 
 const TASK_INCLUDE = {
   room: { include: { roomType: true } },
@@ -117,7 +118,7 @@ export class HousekeepingService {
    */
   async listTasks(query: ListTasksDto, user: AuthUser) {
     const propertyId = resolvePropertyScope(user, query.propertyId);
-    const date = parseDateOnly(query.date ?? today());
+    const date = parseDateOnly(query.date ?? todayString());
 
     const assignedToId =
       user.role === UserRole.HOUSEKEEPING
@@ -139,7 +140,7 @@ export class HousekeepingService {
       orderBy: [{ status: 'asc' }, { room: { number: 'asc' } }],
     });
 
-    return { date: query.date ?? today(), items, total: items.length };
+    return { date: query.date ?? todayString(), items, total: items.length };
   }
 
   /**
@@ -150,7 +151,7 @@ export class HousekeepingService {
    */
   async generateTasks(dto: GenerateTasksDto, user: AuthUser) {
     const property = await this.resolveProperty(dto.propertyId, user);
-    const dateString = dto.date ?? today();
+    const dateString = dto.date ?? todayString();
     const date = parseDateOnly(dateString);
 
     const rooms = await this.prisma.room.findMany({
@@ -317,6 +318,3 @@ export class HousekeepingService {
 }
 
 /** Today in UTC, the same basis as @db.Date columns. */
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}

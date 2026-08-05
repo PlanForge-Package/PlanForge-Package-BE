@@ -10,6 +10,7 @@ import type { CoreFolio } from '../core/core.types';
 import { mirrorFolios } from '../folios/folio-mirror';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PostRoomChargeDto, VoidRoomChargeDto } from './dto/pos.dto';
+import { isUniqueViolation } from '../common/prisma-errors';
 
 /**
  * Room charges from outside POS.
@@ -262,8 +263,4 @@ export class PosService {
       folioBalance: folio.balance.toString(),
     };
   }
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }

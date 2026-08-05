@@ -20,6 +20,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly } from '../sync/reservation.mapper';
 import { finishSyncLog, startSyncLog } from '../sync/sync-log';
+import { toDateString, todayString } from '../common/date';
 import type {
   CreateRoomOutageDto,
   ListRoomOutagesDto,
@@ -321,11 +322,4 @@ function coversDate(startDate: string, endDate: string, date: string): boolean {
   return startDate <= date && endDate >= date;
 }
 
-function toDateString(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
 /** Today in UTC, the same basis as @db.Date columns. */
-function todayString(): string {
-  return new Date().toISOString().slice(0, 10);
-}

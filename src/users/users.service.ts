@@ -4,10 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, UserRole, type User } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateUserDto, ListUsersDto, ResetPasswordDto, UpdateUserDto } from './dto/users.dto';
+import { isUniqueViolation } from '../common/prisma-errors';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -212,14 +213,3 @@ export class UsersService {
  * goes out. With a value we compare fields; without one, P2002 itself is the basis.
  * User has exactly one unique constraint, email, so there is nothing to misjudge.
  */
-function isUniqueViolation(error: unknown, field: keyof User): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
-    return false;
-  }
-
-  const target = error.meta?.target;
-  if (typeof target === 'string') return target.includes(field);
-  if (Array.isArray(target)) return target.some((t) => String(t).includes(field));
-
-  return true;
-}

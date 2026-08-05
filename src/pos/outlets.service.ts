@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type PosOutlet } from '@prisma/client';
+import { type PosOutlet } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import type { AuthUser } from '../auth/auth.constants';
@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
 import { POS_KEY_PREFIX, POS_KEY_PREFIX_LENGTH } from './pos-key.guard';
 import type { CreateOutletDto, UpdateOutletDto } from './dto/pos.dto';
+import { isUniqueViolation } from '../common/prisma-errors';
 
 /** Random bytes in a key. At 32 bytes, guessing is not realistically possible. */
 const KEY_BYTES = 32;
@@ -139,8 +140,4 @@ async function issueKey(): Promise<{ key: string; hash: string; prefix: string }
     hash: await bcrypt.hash(key, 10),
     prefix: key.slice(0, POS_KEY_PREFIX_LENGTH),
   };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }

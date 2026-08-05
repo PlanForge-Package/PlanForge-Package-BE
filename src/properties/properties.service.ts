@@ -1,9 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreatePropertyDto, UpdatePropertyDto } from './dto/properties.dto';
 import { assertWithinScope } from './property-scope';
+import { isUniqueViolation } from '../common/prisma-errors';
 
 @Injectable()
 export class PropertiesService {
@@ -92,6 +92,3 @@ export class PropertiesService {
  * instead of field names. Property has exactly one unique constraint, operaHotelId,
  * so relying on P2002 itself misjudges nothing.
  */
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
-}
