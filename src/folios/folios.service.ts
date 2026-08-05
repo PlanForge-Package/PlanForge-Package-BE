@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, SyncDirection, SyncStatus } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 
@@ -13,6 +12,7 @@ import type {
   TransferPostingDto,
 } from './dto/folios.dto';
 import { mirrorFolios, toOperaPostingType } from './folio-mirror';
+import { withSyncLog } from '../sync/sync-log';
 
 /**
  * Folio — the guest's bill.
@@ -276,38 +276,11 @@ export class FoliosService {
   }
 
   /** Wraps one delegation in a SyncLog, so a failure records what we were sending. */
-  private async delegate<T>(
+  private delegate<T>(
     reservationId: string,
     payload: Record<string, unknown>,
     call: () => Promise<T>,
   ): Promise<T> {
-    const log = await this.prisma.syncLog.create({
-      data: {
-        entity: 'Folio',
-        entityId: reservationId,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: payload as Prisma.InputJsonValue,
-      },
-    });
-
-    try {
-      const result = await call();
-      await this.prisma.syncLog.update({
-        where: { id: log.id },
-        data: { status: SyncStatus.SUCCESS, finishedAt: new Date() },
-      });
-      return result;
-    } catch (error) {
-      await this.prisma.syncLog.update({
-        where: { id: log.id },
-        data: {
-          status: SyncStatus.FAILED,
-          finishedAt: new Date(),
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-      throw error;
-    }
+    return withSyncLog(this.prisma, { entity: 'Folio', entityId: reservationId, payload }, call);
   }
 }

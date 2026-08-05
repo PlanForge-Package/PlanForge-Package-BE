@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import {
   Prisma,
   ReservationStatus,
-  SyncDirection,
   SyncStatus,
   type Property,
   type Reservation,
@@ -14,6 +13,7 @@ import { mirrorFolios } from '../folios/folio-mirror';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly, toReservationStatus } from '../sync/reservation.mapper';
+import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 import type {
   CancelBookingDto,
   CheckAvailabilityDto,
@@ -527,36 +527,19 @@ export class BookingService {
 
   /** Every write is logged. A failed OPERA call needs to show what we sent. */
   private startLog(entity: string, entityId: string | null, payload: unknown) {
-    return this.prisma.syncLog.create({
-      data: {
-        entity,
-        entityId,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: payload as Prisma.InputJsonValue,
-      },
-    });
+    return startSyncLog(this.prisma, entity, entityId, payload);
   }
 
-  private async finishLog(
+  private finishLog(
     id: string,
     status: SyncStatus,
     entityId: string | null,
     error?: unknown,
   ): Promise<void> {
-    const message = error instanceof Error ? error.message : error ? String(error) : null;
-    if (message) {
-      this.logger.warn(`OPERA 쓰기 실패: ${message}`);
-    }
-
-    await this.prisma.syncLog.update({
-      where: { id },
-      data: {
-        status,
-        finishedAt: new Date(),
-        ...(entityId ? { entityId } : {}),
-        ...(message ? { error: message } : {}),
-      },
+    return finishSyncLog(this.prisma, id, status, {
+      entityId,
+      error,
+      warn: (message) => this.logger.warn(`OPERA 쓰기 실패: ${message}`),
     });
   }
 }

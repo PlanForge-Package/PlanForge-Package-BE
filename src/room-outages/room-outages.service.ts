@@ -9,7 +9,6 @@ import {
   ReservationStatus,
   RoomOutageKind,
   RoomStatus,
-  SyncDirection,
   SyncStatus,
   type Property,
   type RoomOutage,
@@ -20,6 +19,7 @@ import type { CoreRoomOutage } from '../core/core.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertWithinScope, resolvePropertyScope } from '../properties/property-scope';
 import { parseDateOnly } from '../sync/reservation.mapper';
+import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 import type {
   CreateRoomOutageDto,
   ListRoomOutagesDto,
@@ -296,24 +296,12 @@ export class RoomOutagesService {
     return property;
   }
 
-  private startLog(roomNumber: string, payload: unknown) {
-    return this.prisma.syncLog.create({
-      data: {
-        entity: 'RoomOutage',
-        entityId: roomNumber,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: payload as Prisma.InputJsonValue,
-      },
-    });
+  private startLog(roomNumber: string | null, payload: unknown) {
+    return startSyncLog(this.prisma, 'RoomOutage', roomNumber, payload);
   }
 
-  private async finishLog(id: string, status: SyncStatus, error?: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : error ? String(error) : null;
-    await this.prisma.syncLog.update({
-      where: { id },
-      data: { status, finishedAt: new Date(), ...(message ? { error: message } : {}) },
-    });
+  private finishLog(id: string, status: SyncStatus, error?: unknown): Promise<void> {
+    return finishSyncLog(this.prisma, id, status, { error });
   }
 }
 

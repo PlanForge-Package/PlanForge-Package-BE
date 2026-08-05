@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   Prisma,
   RoomStatus,
-  SyncDirection,
   SyncStatus,
   TaskStatus,
   UserRole,
@@ -21,6 +20,7 @@ import type {
   UpdateTaskDto,
 } from './dto/housekeeping.dto';
 import { fromOperaRoomStatus, toOperaRoomStatus } from './room-status.mapper';
+import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 
 const TASK_INCLUDE = {
   room: { include: { roomType: true } },
@@ -307,24 +307,12 @@ export class HousekeepingService {
     return property;
   }
 
-  private startLog(roomNumber: string, payload: unknown) {
-    return this.prisma.syncLog.create({
-      data: {
-        entity: 'Room',
-        entityId: roomNumber,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: payload as Prisma.InputJsonValue,
-      },
-    });
+  private startLog(roomNumber: string | null, payload: unknown) {
+    return startSyncLog(this.prisma, 'Room', roomNumber, payload);
   }
 
-  private async finishLog(id: string, status: SyncStatus, error?: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : error ? String(error) : null;
-    await this.prisma.syncLog.update({
-      where: { id },
-      data: { status, finishedAt: new Date(), ...(message ? { error: message } : {}) },
-    });
+  private finishLog(id: string, status: SyncStatus, error?: unknown): Promise<void> {
+    return finishSyncLog(this.prisma, id, status, { error });
   }
 }
 

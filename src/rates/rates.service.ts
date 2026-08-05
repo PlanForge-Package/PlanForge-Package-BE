@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, SyncDirection, SyncStatus, type Property } from '@prisma/client';
+import { type Property } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 import type { CorePackage, CoreRatePlan } from '../core/core.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
+import { withSyncLog } from '../sync/sync-log';
 import type {
   CreatePackageDto,
   CreateRatePlanDto,
@@ -263,34 +264,7 @@ export class RatesService {
   }
 
   /** Setup changes going to OPERA log both success and failure. Rates are money. */
-  private async delegate<T>(action: string, entityId: string, call: () => Promise<T>): Promise<T> {
-    const log = await this.prisma.syncLog.create({
-      data: {
-        entity: 'RatePlan',
-        entityId,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: { action } as Prisma.InputJsonValue,
-      },
-    });
-
-    try {
-      const result = await call();
-      await this.prisma.syncLog.update({
-        where: { id: log.id },
-        data: { status: SyncStatus.SUCCESS, finishedAt: new Date() },
-      });
-      return result;
-    } catch (error) {
-      await this.prisma.syncLog.update({
-        where: { id: log.id },
-        data: {
-          status: SyncStatus.FAILED,
-          finishedAt: new Date(),
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-      throw error;
-    }
+  private delegate<T>(action: string, entityId: string, call: () => Promise<T>): Promise<T> {
+    return withSyncLog(this.prisma, { entity: 'RatePlan', entityId, payload: { action } }, call);
   }
 }

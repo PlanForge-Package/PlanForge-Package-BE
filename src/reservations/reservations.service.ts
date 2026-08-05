@@ -4,7 +4,6 @@ import {
   Prisma,
   ReservationStatus,
   RoomStatus,
-  SyncDirection,
   SyncStatus,
   type Reservation,
 } from '@prisma/client';
@@ -17,6 +16,7 @@ import { assertWithinScope, resolvePropertyScope } from '../properties/property-
 import { parseDateOnly, toReservationStatus } from '../sync/reservation.mapper';
 import type { CheckInDto, CheckOutDto } from './dto/front-desk.dto';
 import type { ListReservationsDto } from './dto/list-reservations.dto';
+import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 
 /** Statuses a check-in may start from. */
 const CHECK_IN_ALLOWED: ReservationStatus[] = [
@@ -360,23 +360,11 @@ export class ReservationsService {
     return { propertyId, date, arrivals, departures, inHouse };
   }
 
-  private startLog(reservationId: string, payload: unknown) {
-    return this.prisma.syncLog.create({
-      data: {
-        entity: 'Reservation',
-        entityId: reservationId,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: payload as Prisma.InputJsonValue,
-      },
-    });
+  private startLog(reservationId: string | null, payload: unknown) {
+    return startSyncLog(this.prisma, 'Reservation', reservationId, payload);
   }
 
-  private async finishLog(id: string, status: SyncStatus, error?: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : error ? String(error) : null;
-    await this.prisma.syncLog.update({
-      where: { id },
-      data: { status, finishedAt: new Date(), ...(message ? { error: message } : {}) },
-    });
+  private finishLog(id: string, status: SyncStatus, error?: unknown): Promise<void> {
+    return finishSyncLog(this.prisma, id, status, { error });
   }
 }

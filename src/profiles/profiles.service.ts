@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma, SyncDirection, SyncStatus, type Profile } from '@prisma/client';
+import { Prisma, SyncStatus, type Profile } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolvePropertyScope } from '../properties/property-scope';
 import { PREFERENCE_CODES, type ListProfilesDto, type UpdateProfileDto } from './dto/profiles.dto';
+import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 
 const VALID_PREFERENCES = new Set<string>(PREFERENCE_CODES);
 
@@ -264,36 +265,19 @@ export class ProfilesService {
 
   /** Writes are logged. A failed OPERA call needs to show what we sent. */
   private startLog(entityId: string | null, payload: unknown) {
-    return this.prisma.syncLog.create({
-      data: {
-        entity: 'Profile',
-        entityId,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: payload as Prisma.InputJsonValue,
-      },
-    });
+    return startSyncLog(this.prisma, 'Profile', entityId, payload);
   }
 
-  private async finishLog(
+  private finishLog(
     id: string,
     status: SyncStatus,
     entityId: string | null,
     error?: unknown,
   ): Promise<void> {
-    const message = error instanceof Error ? error.message : error ? String(error) : null;
-    if (message) {
-      this.logger.warn(`OPERA 프로필 병합 실패: ${message}`);
-    }
-
-    await this.prisma.syncLog.update({
-      where: { id },
-      data: {
-        status,
-        finishedAt: new Date(),
-        ...(entityId ? { entityId } : {}),
-        ...(message ? { error: message } : {}),
-      },
+    return finishSyncLog(this.prisma, id, status, {
+      entityId,
+      error,
+      warn: (message) => this.logger.warn(`OPERA 프로필 병합 실패: ${message}`),
     });
   }
 

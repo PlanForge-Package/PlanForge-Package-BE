@@ -1,12 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import {
-  Prisma,
-  SyncDirection,
-  SyncStatus,
-  type Block,
-  type BlockAllotment,
-  type Property,
-} from '@prisma/client';
+import { Prisma, SyncStatus, type Block, type BlockAllotment, type Property } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.constants';
 import { CoreClient } from '../core/core.client';
 import type { CoreBlock } from '../core/core.types';
@@ -15,6 +8,7 @@ import { assertWithinScope, resolvePropertyScope } from '../properties/property-
 import { parseDateOnly } from '../sync/reservation.mapper';
 import { toBlockStatus, toCoreBlockStatus } from './block.mapper';
 import type { CreateBlockDto, ListBlocksDto, UpdateBlockDto } from './dto/blocks.dto';
+import { finishSyncLog, startSyncLog } from '../sync/sync-log';
 
 type BlockWithAllotments = Block & { allotments: BlockAllotment[] };
 
@@ -241,36 +235,19 @@ export class BlocksService {
   }
 
   private startLog(entityId: string | null, payload: unknown) {
-    return this.prisma.syncLog.create({
-      data: {
-        entity: 'Block',
-        entityId,
-        direction: SyncDirection.PUSH,
-        status: SyncStatus.PENDING,
-        payload: payload as Prisma.InputJsonValue,
-      },
-    });
+    return startSyncLog(this.prisma, 'Block', entityId, payload);
   }
 
-  private async finishLog(
+  private finishLog(
     id: string,
     status: SyncStatus,
     entityId: string | null,
     error?: unknown,
   ): Promise<void> {
-    const message = error instanceof Error ? error.message : error ? String(error) : null;
-    if (message) {
-      this.logger.warn(`OPERA 블록 쓰기 실패: ${message}`);
-    }
-
-    await this.prisma.syncLog.update({
-      where: { id },
-      data: {
-        status,
-        finishedAt: new Date(),
-        ...(entityId ? { entityId } : {}),
-        ...(message ? { error: message } : {}),
-      },
+    return finishSyncLog(this.prisma, id, status, {
+      entityId,
+      error,
+      warn: (message) => this.logger.warn(`OPERA 블록 쓰기 실패: ${message}`),
     });
   }
 }

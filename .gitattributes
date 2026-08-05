@@ -1,13 +1,13 @@
-# Prettier(endOfLine: lf) 및 .editorconfig 와 맞추기 위해 체크아웃 시에도 LF 를 유지한다.
+# Keep LF on checkout too, to match Prettier (endOfLine: lf) and .editorconfig.
 * text=auto eol=lf
 
-# 바이너리
+# Binary
 *.png binary
 *.jpg binary
 *.jpeg binary
 *.ico binary
 *.pdf binary
 
-# 자동 생성물은 diff 에서 접는다.
+# Generated files are collapsed in diffs.
 pnpm-lock.yaml linguist-generated=true -diff
 prisma/migrations/** linguist-generated=true
