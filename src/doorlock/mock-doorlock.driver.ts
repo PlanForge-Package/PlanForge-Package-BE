@@ -50,7 +50,7 @@ export class MockDoorLockDriver implements DoorLockDriver {
      * means a retry never succeeds and a lost card stays alive.
      */
     this.issued.delete(vendorKeyId);
-    this.logger.debug(`모의 카드 무효화: ${vendorKeyId}`);
+    this.logger.debug(`Mock key void: ${vendorKeyId}`);
   }
 
   /** Used by tests to reset the state. */

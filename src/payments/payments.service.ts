@@ -133,7 +133,7 @@ export class PaymentsService {
       });
     } catch (error) {
       const declined = error instanceof PaymentError && error.declined;
-      this.logger.warn(`승인 실패 (${declined ? '거절' : '결과 불명'}): ${describe(error)}`);
+      this.logger.warn(`Authorisation failed (${declined ? 'declined' : 'outcome unknown'}): ${describe(error)}`);
 
       // Declines are logged. Repeated attempts on one card need to be traceable.
       if (declined) {
@@ -219,7 +219,7 @@ export class PaymentsService {
     try {
       await this.driver.capture(payment.vendorTxnId, amount.toFixed(2));
     } catch (error) {
-      this.logger.warn(`매입 실패: ${describe(error)}`);
+      this.logger.warn(`Capture failed: ${describe(error)}`);
       throw new BadRequestException(`매입하지 못했습니다: ${describe(error)}`);
     }
 
@@ -250,7 +250,7 @@ export class PaymentsService {
     try {
       await this.driver.void(payment.vendorTxnId);
     } catch (error) {
-      this.logger.warn(`승인 취소 실패: ${describe(error)}`);
+      this.logger.warn(`Void failed: ${describe(error)}`);
       throw new BadRequestException(`승인을 취소하지 못했습니다: ${describe(error)}`);
     }
 
@@ -291,7 +291,7 @@ export class PaymentsService {
       try {
         await this.driver.refund(payment.vendorTxnId, amount.toFixed(2));
       } catch (error) {
-        this.logger.warn(`환불 실패: ${describe(error)}`);
+        this.logger.warn(`Refund failed: ${describe(error)}`);
         throw new BadRequestException(`환불하지 못했습니다: ${describe(error)}`);
       }
     }

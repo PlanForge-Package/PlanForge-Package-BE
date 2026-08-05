@@ -39,7 +39,7 @@ export class MockPaymentDriver implements PaymentDriver {
     const vendorTxnId = `MOCKTXN-${randomBytes(6).toString('hex').toUpperCase()}`;
     this.transactions.set(vendorTxnId, { amount: request.amount, captured: false });
 
-    this.logger.debug(`모의 승인: ${vendorTxnId} ${request.amount} ${request.currency}`);
+    this.logger.debug(`Mock authorise: ${vendorTxnId} ${request.amount} ${request.currency}`);
     return {
       vendorTxnId,
       approvalNumber: randomBytes(4).toString('hex').toUpperCase(),
@@ -62,7 +62,7 @@ export class MockPaymentDriver implements PaymentDriver {
     }
 
     txn.captured = true;
-    this.logger.debug(`모의 매입: ${vendorTxnId} ${amount}`);
+    this.logger.debug(`Mock capture: ${vendorTxnId} ${amount}`);
   }
 
   async void(vendorTxnId: string): Promise<void> {
@@ -75,7 +75,7 @@ export class MockPaymentDriver implements PaymentDriver {
     }
 
     this.transactions.delete(vendorTxnId);
-    this.logger.debug(`모의 승인 취소: ${vendorTxnId}`);
+    this.logger.debug(`Mock void: ${vendorTxnId}`);
   }
 
   async refund(vendorTxnId: string, amount: string): Promise<void> {
@@ -87,7 +87,7 @@ export class MockPaymentDriver implements PaymentDriver {
       throw new PaymentError('매입되지 않은 거래는 환불할 수 없습니다. 승인 취소를 쓰세요.', true);
     }
 
-    this.logger.debug(`모의 환불: ${vendorTxnId} ${amount}`);
+    this.logger.debug(`Mock refund: ${vendorTxnId} ${amount}`);
   }
 
   /** Used by tests to reset the state. */

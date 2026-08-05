@@ -33,7 +33,7 @@ export class AuthService {
     // Unknown email, wrong password and disabled account all return the same message.
     // Saying which one was wrong is what account enumeration runs on.
     if (!user || !matches || !user.active) {
-      this.logger.warn(`로그인 실패: ${email}`);
+      this.logger.warn(`Login failed: ${email}`);
       throw new UnauthorizedException('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
 

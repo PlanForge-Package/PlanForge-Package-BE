@@ -247,7 +247,7 @@ export class BlocksService {
     return finishSyncLog(this.prisma, id, status, {
       entityId,
       error,
-      warn: (message) => this.logger.warn(`OPERA 블록 쓰기 실패: ${message}`),
+      warn: (message) => this.logger.warn(`OPERA block write failed: ${message}`),
     });
   }
 }

@@ -539,7 +539,7 @@ export class BookingService {
     return finishSyncLog(this.prisma, id, status, {
       entityId,
       error,
-      warn: (message) => this.logger.warn(`OPERA 쓰기 실패: ${message}`),
+      warn: (message) => this.logger.warn(`OPERA write failed: ${message}`),
     });
   }
 }

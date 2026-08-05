@@ -489,7 +489,7 @@ export class CoreClient {
     const body: unknown = text ? safeJson(text) : null;
 
     if (!res.ok) {
-      this.logger.warn(`Core 응답 오류 ${res.status}: ${path}`);
+      this.logger.warn(`Core responded ${res.status}: ${path}`);
       throw new CoreApiError(
         res.status,
         `Core 호출이 ${res.status} 로 실패했습니다: ${path}`,

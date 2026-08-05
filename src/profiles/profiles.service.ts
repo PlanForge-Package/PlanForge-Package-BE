@@ -277,7 +277,7 @@ export class ProfilesService {
     return finishSyncLog(this.prisma, id, status, {
       entityId,
       error,
-      warn: (message) => this.logger.warn(`OPERA 프로필 병합 실패: ${message}`),
+      warn: (message) => this.logger.warn(`OPERA profile merge failed: ${message}`),
     });
   }
 

@@ -112,7 +112,7 @@ export class DoorLockService {
       vendorKeyId = result.vendorKeyId;
     } catch (error) {
       const rejected = error instanceof DoorLockError && error.rejected;
-      this.logger.error(`카드 발급 실패 (${rejected ? '거절' : '결과 불명'}): ${describe(error)}`);
+      this.logger.error(`Key issue failed (${rejected ? 'refused' : 'outcome unknown'}): ${describe(error)}`);
       throw new BadRequestException(
         rejected
           ? `잠금장치가 발급을 거절했습니다: ${describe(error)}`
@@ -184,7 +184,7 @@ export class DoorLockService {
     try {
       await this.driver.revoke(key.vendorKeyId);
     } catch (error) {
-      this.logger.error(`카드 무효화 실패: ${key.vendorKeyId} — ${describe(error)}`);
+      this.logger.error(`Key void failed: ${key.vendorKeyId} — ${describe(error)}`);
       throw new BadRequestException(
         '잠금장치에서 카드를 무효화하지 못했습니다. 카드가 아직 열릴 수 있으니 확인해 주세요.',
       );
